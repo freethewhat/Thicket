@@ -48,11 +48,6 @@ func (m Model) Init() tea.Cmd {
 	return nil
 }
 
-// View is a temporary stub until Task 4 implements the browser rendering.
-func (m Model) View() string {
-	return ""
-}
-
 // Result reports the outcome after the program quits: ok is true only if
 // the user pressed Enter (as opposed to q/Esc/Ctrl-C).
 func (m Model) Result() (path string, ok bool) {
