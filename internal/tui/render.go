@@ -147,14 +147,19 @@ func renderColumn(c column, width, rows int) string {
 			continue
 		}
 		e := c.entries[i]
-		text := truncate(e.Name, width)
-		switch {
-		case i == c.highlightIdx:
-			text = selectedStyle.Render(text)
-		case e.IsSymlink:
-			text = symlinkStyle.Render(text + "@")
-		case e.IsDir:
+		nameWidth := width
+		if e.IsSymlink {
+			nameWidth--
+		}
+		text := truncate(e.Name, nameWidth)
+		if e.IsDir {
 			text = dirStyle.Render(text)
+		}
+		if e.IsSymlink {
+			text += symlinkStyle.Render("@")
+		}
+		if i == c.highlightIdx {
+			text = selectedStyle.Render(text)
 		}
 		b.WriteString(text)
 		b.WriteString("\n")

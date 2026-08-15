@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+	"thicket/internal/fsutil"
 )
 
 func TestView_ShowsActiveDirectoryEntries(t *testing.T) {
@@ -73,6 +76,54 @@ func TestView_NarrowTerminalShowsActiveColumnOnly(t *testing.T) {
 	if !strings.Contains(out, "sub") {
 		t.Fatalf("expected active column contents even when narrow:\n%s", out)
 	}
+}
+
+func TestRenderColumn_SelectedDirectoryKeepsBoldStyle(t *testing.T) {
+	restoreColorProfile(t)
+
+	got := renderColumn(column{
+		entries:      []fsutil.Entry{{Name: "directory", IsDir: true}},
+		highlightIdx: 0,
+	}, 20, 1)
+	want := selectedStyle.Render(dirStyle.Render("directory"))
+	if !strings.Contains(got, want) {
+		t.Fatalf("selected directory lost its bold styling:\n%q", got)
+	}
+}
+
+func TestRenderColumn_SelectedSymlinkKeepsFaintSuffix(t *testing.T) {
+	restoreColorProfile(t)
+
+	got := renderColumn(column{
+		entries:      []fsutil.Entry{{Name: "link", IsSymlink: true}},
+		highlightIdx: 0,
+	}, 20, 1)
+	want := selectedStyle.Render("link" + symlinkStyle.Render("@"))
+	if !strings.Contains(got, want) {
+		t.Fatalf("selected symlink lost its faint suffix:\n%q", got)
+	}
+}
+
+func TestRenderColumn_LongSymlinkFitsColumn(t *testing.T) {
+	restoreColorProfile(t)
+
+	got := renderColumn(column{
+		entries:      []fsutil.Entry{{Name: "long-link", IsSymlink: true}},
+		highlightIdx: -1,
+	}, 5, 1)
+	if !strings.Contains(got, "@") {
+		t.Fatalf("truncated symlink lost its suffix: %q", got)
+	}
+	if width := lipgloss.Width(got); width != 5 {
+		t.Fatalf("symlink row width = %d, want 5: %q", width, got)
+	}
+}
+
+func restoreColorProfile(t *testing.T) {
+	t.Helper()
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.ANSI)
+	t.Cleanup(func() { lipgloss.SetColorProfile(profile) })
 }
 
 func rightKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRight} }
