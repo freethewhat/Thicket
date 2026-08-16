@@ -1,2 +1,16 @@
 .worktrees/
 .superpowers/
+
+# Build artifacts
+/thicket
+/cmd/thicket/thicket
+*.test
+*.out
+*.prof
+vendor/
+
+# Editor/OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
