@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"thicket/internal/fsutil"
+	marksPkg "thicket/internal/marks"
 )
 
 func mustMkdir(t *testing.T, path string) {
@@ -45,7 +47,7 @@ func setupFixture(t *testing.T) string {
 
 func newTestModel(t *testing.T, path string) Model {
 	t.Helper()
-	m, err := New(path)
+	m, err := New(path, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", path, err)
 	}
@@ -796,7 +798,7 @@ func TestUpdate_PageDownMovesCursorByVisibleRows(t *testing.T) {
 	for i := range 30 {
 		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
 	}
-	m, err := New(root)
+	m, err := New(root, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", root, err)
 	}
@@ -816,7 +818,7 @@ func TestUpdate_PageUpMovesCursorByVisibleRows(t *testing.T) {
 	for i := range 30 {
 		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
 	}
-	m, err := New(root)
+	m, err := New(root, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", root, err)
 	}
@@ -840,7 +842,7 @@ func TestUpdate_PageDownClampsAtLastEntry(t *testing.T) {
 	for i := range 30 {
 		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
 	}
-	m, err := New(root)
+	m, err := New(root, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", root, err)
 	}
@@ -864,7 +866,7 @@ func TestUpdate_PageUpClampsAtFirstEntry(t *testing.T) {
 	for i := range 30 {
 		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
 	}
-	m, err := New(root)
+	m, err := New(root, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", root, err)
 	}
@@ -888,7 +890,7 @@ func TestUpdate_HomeJumpsToFirstEntry(t *testing.T) {
 	for i := range 30 {
 		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
 	}
-	m, err := New(root)
+	m, err := New(root, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", root, err)
 	}
@@ -912,7 +914,7 @@ func TestUpdate_EndJumpsToLastEntry(t *testing.T) {
 	for i := range 30 {
 		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
 	}
-	m, err := New(root)
+	m, err := New(root, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", root, err)
 	}
@@ -967,5 +969,64 @@ func TestUpdate_SearchPageAndHomeEndKeysAreNoops(t *testing.T) {
 	}
 	if !m.searchMode {
 		t.Fatal("expected still in searchMode")
+	}
+}
+
+func TestSortedMarkLetters_LowercaseBeforeUppercaseAlphabeticalWithinCase(t *testing.T) {
+	m := marksPkg.Marks{'Z': "/z", 'b': "/b", 'a': "/a", 'A': "/cap-a"}
+	got := sortedMarkLetters(m)
+	want := []rune{'a', 'b', 'A', 'Z'}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("sortedMarkLetters = %q, want %q", string(got), string(want))
+	}
+}
+
+func TestSortedMarkLetters_EmptyReturnsEmptySlice(t *testing.T) {
+	if got := sortedMarkLetters(marksPkg.Marks{}); len(got) != 0 {
+		t.Fatalf("sortedMarkLetters(empty) = %v, want empty", got)
+	}
+}
+
+func TestMarksListCursorFor_ZeroWhenNonEmpty(t *testing.T) {
+	if got := marksListCursorFor(marksPkg.Marks{'a': "/x"}); got != 0 {
+		t.Fatalf("marksListCursorFor(non-empty) = %d, want 0", got)
+	}
+}
+
+func TestMarksListCursorFor_NegativeOneWhenEmpty(t *testing.T) {
+	if got := marksListCursorFor(marksPkg.Marks{}); got != -1 {
+		t.Fatalf("marksListCursorFor(empty) = %d, want -1", got)
+	}
+}
+
+func TestNew_LoadsExistingMarksFromDisk(t *testing.T) {
+	root := setupFixture(t)
+	marksPath := filepath.Join(t.TempDir(), "marks")
+	if err := marksPkg.Save(marksPath, marksPkg.Marks{'a': root}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	m, err := New(root, marksPath)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if m.markTable['a'] != root {
+		t.Fatalf("markTable['a'] = %q, want %q", m.markTable['a'], root)
+	}
+	if m.marksCursor != 0 {
+		t.Fatalf("marksCursor = %d, want 0 (non-empty markTable)", m.marksCursor)
+	}
+}
+
+func TestNew_NoMarksFileGivesNegativeOneCursor(t *testing.T) {
+	root := setupFixture(t)
+	marksPath := filepath.Join(t.TempDir(), "marks")
+
+	m, err := New(root, marksPath)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if m.marksCursor != -1 {
+		t.Fatalf("marksCursor = %d, want -1 (no marks file yet)", m.marksCursor)
 	}
 }

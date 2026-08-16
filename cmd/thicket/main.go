@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"thicket/internal/marks"
 	"thicket/internal/tui"
 )
 
@@ -23,7 +24,13 @@ func main() {
 		}
 	}
 
-	m, err := tui.New(start)
+	marksPath, err := marks.DefaultPath()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "thicket: %v\n", err)
+		os.Exit(2)
+	}
+
+	m, err := tui.New(start, marksPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "thicket: %v\n", err)
 		os.Exit(2)

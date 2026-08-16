@@ -218,7 +218,7 @@ func TestView_ActiveColumnScrollTracksActiveScroll(t *testing.T) {
 	for i := range 30 {
 		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
 	}
-	m, err := New(root)
+	m, err := New(root, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", root, err)
 	}
