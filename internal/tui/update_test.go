@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -787,5 +788,184 @@ func TestUpdate_CtrlCQuitsEvenDuringHelp(t *testing.T) {
 	}
 	if m.selected {
 		t.Fatal("Ctrl-C must not select a path")
+	}
+}
+
+func TestUpdate_PageDownMovesCursorByVisibleRows(t *testing.T) {
+	root := t.TempDir()
+	for i := range 30 {
+		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
+	}
+	m, err := New(root)
+	if err != nil {
+		t.Fatalf("New(%q): %v", root, err)
+	}
+	m.height = 10 // visibleRows() = 6
+	m.width = 20
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = updated.(Model)
+
+	if m.activeCursor != 6 {
+		t.Fatalf("activeCursor = %d, want 6 (0 + visibleRows)", m.activeCursor)
+	}
+}
+
+func TestUpdate_PageUpMovesCursorByVisibleRows(t *testing.T) {
+	root := t.TempDir()
+	for i := range 30 {
+		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
+	}
+	m, err := New(root)
+	if err != nil {
+		t.Fatalf("New(%q): %v", root, err)
+	}
+	m.height = 10 // visibleRows() = 6
+	m.width = 20
+
+	for range 20 {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = updated.(Model)
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = updated.(Model)
+
+	if m.activeCursor != 14 {
+		t.Fatalf("activeCursor = %d, want 14 (20 - visibleRows)", m.activeCursor)
+	}
+}
+
+func TestUpdate_PageDownClampsAtLastEntry(t *testing.T) {
+	root := t.TempDir()
+	for i := range 30 {
+		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
+	}
+	m, err := New(root)
+	if err != nil {
+		t.Fatalf("New(%q): %v", root, err)
+	}
+	m.height = 10 // visibleRows() = 6
+	m.width = 20
+
+	for range 27 {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = updated.(Model)
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+	m = updated.(Model)
+
+	if last := len(m.activeEntries) - 1; m.activeCursor != last {
+		t.Fatalf("activeCursor = %d, want %d (clamped at last entry)", m.activeCursor, last)
+	}
+}
+
+func TestUpdate_PageUpClampsAtFirstEntry(t *testing.T) {
+	root := t.TempDir()
+	for i := range 30 {
+		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
+	}
+	m, err := New(root)
+	if err != nil {
+		t.Fatalf("New(%q): %v", root, err)
+	}
+	m.height = 10 // visibleRows() = 6
+	m.width = 20
+
+	for range 3 {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = updated.(Model)
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = updated.(Model)
+
+	if m.activeCursor != 0 {
+		t.Fatalf("activeCursor = %d, want 0 (clamped at first entry)", m.activeCursor)
+	}
+}
+
+func TestUpdate_HomeJumpsToFirstEntry(t *testing.T) {
+	root := t.TempDir()
+	for i := range 30 {
+		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
+	}
+	m, err := New(root)
+	if err != nil {
+		t.Fatalf("New(%q): %v", root, err)
+	}
+	m.height = 10
+	m.width = 20
+
+	for range 15 {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = updated.(Model)
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyHome})
+	m = updated.(Model)
+
+	if m.activeCursor != 0 {
+		t.Fatalf("activeCursor = %d, want 0", m.activeCursor)
+	}
+}
+
+func TestUpdate_EndJumpsToLastEntry(t *testing.T) {
+	root := t.TempDir()
+	for i := range 30 {
+		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
+	}
+	m, err := New(root)
+	if err != nil {
+		t.Fatalf("New(%q): %v", root, err)
+	}
+	m.height = 10
+	m.width = 20
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnd})
+	m = updated.(Model)
+
+	if last := len(m.activeEntries) - 1; m.activeCursor != last {
+		t.Fatalf("activeCursor = %d, want %d", m.activeCursor, last)
+	}
+}
+
+func TestUpdate_PageAndHomeEndKeysNoopOnEmptyDirectory(t *testing.T) {
+	root := t.TempDir()
+	mustMkdir(t, filepath.Join(root, "empty"))
+	m := newTestModel(t, filepath.Join(root, "empty"))
+
+	for _, kt := range []tea.KeyType{tea.KeyPgUp, tea.KeyPgDown, tea.KeyHome, tea.KeyEnd} {
+		updated, _ := m.Update(tea.KeyMsg{Type: kt})
+		m = updated.(Model)
+		if m.activeCursor != -1 {
+			t.Fatalf("key %v: activeCursor = %d, want -1 for empty dir", kt, m.activeCursor)
+		}
+	}
+}
+
+func TestUpdate_SearchPageAndHomeEndKeysAreNoops(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	beforeCursor, beforeQuery := m.activeCursor, m.searchQuery
+
+	for _, kt := range []tea.KeyType{tea.KeyPgUp, tea.KeyPgDown, tea.KeyHome, tea.KeyEnd} {
+		updated, cmd := m.Update(tea.KeyMsg{Type: kt})
+		m = updated.(Model)
+		if cmd != nil {
+			t.Fatalf("key %v produced a command while searching", kt)
+		}
+	}
+
+	if m.activeCursor != beforeCursor {
+		t.Fatalf("activeCursor = %d, want unchanged %d", m.activeCursor, beforeCursor)
+	}
+	if m.searchQuery != beforeQuery {
+		t.Fatalf("searchQuery = %q, want unchanged %q", m.searchQuery, beforeQuery)
+	}
+	if !m.searchMode {
+		t.Fatal("expected still in searchMode")
 	}
 }

@@ -36,6 +36,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.moveCursor(-1)
 		case "down", "j":
 			m.moveCursor(1)
+		case "pgup":
+			m.moveCursor(-m.visibleRows())
+		case "pgdown":
+			m.moveCursor(m.visibleRows())
+		case "home":
+			m.moveCursor(-len(m.activeEntries))
+		case "end":
+			m.moveCursor(len(m.activeEntries))
 		case "right", "l":
 			m.handleRight()
 		case "left", "h":

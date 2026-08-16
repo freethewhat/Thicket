@@ -35,6 +35,8 @@ for a summary, `man thicket` for the full manual). Keys:
 |---|---|
 | `↑`, `k` | Move selection up |
 | `↓`, `j` | Move selection down |
+| `PgUp`, `PgDn` | Move selection by a full page |
+| `Home`, `End` | Jump to the first/last entry |
 | `→`, `l` | Open selected directory, move focus right (no-op on files) |
 | `←`, `h` | Go up one directory, move focus left (no-op at `/`) |
 | `Enter` | Choose: cd to the selected directory, or to the active directory if a file/empty directory is selected; exit |
