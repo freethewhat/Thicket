@@ -15,6 +15,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clampScroll()
 		return m, nil
 	case tea.KeyMsg:
+		if m.searchMode {
+			m.handleSearchKey(msg)
+			return m, nil
+		}
 		switch msg.String() {
 		case "up", "k":
 			m.moveCursor(-1)
@@ -36,6 +40,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reload()
 		case "r":
 			m.reload()
+		case "/":
+			m.enterSearchMode()
 		}
 	}
 	return m, nil
@@ -174,4 +180,41 @@ func (m *Model) handleEnter() {
 		return
 	}
 	m.chosenPath = m.activePath
+}
+
+// enterSearchMode opens the type-ahead search prompt (spec §4). It never
+// touches activeEntries/activePath — only the query state and a saved
+// cursor to restore on cancel.
+func (m *Model) enterSearchMode() {
+	m.searchMode = true
+	m.searchQuery = ""
+	m.searchNoMatch = false
+	m.searchPrevCursor = m.activeCursor
+}
+
+// exitSearchMode closes the prompt. If restoreCursor is true, activeCursor
+// is reset to the value it had before / was pressed (Esc / empty-backspace
+// behavior, spec §4); otherwise activeCursor is left wherever the search
+// moved it (Enter behavior).
+func (m *Model) exitSearchMode(restoreCursor bool) {
+	m.searchMode = false
+	m.searchQuery = ""
+	m.searchNoMatch = false
+	if restoreCursor {
+		m.activeCursor = m.searchPrevCursor
+		m.clampScroll()
+	}
+}
+
+// handleSearchKey processes one key while searchMode is true (spec §4).
+// Discriminates on msg.Type, not msg.String() — see Global Constraints.
+// Any msg.Type not matched by a case below (arrows, Tab, Ctrl-U, Home,
+// PageUp, F-keys, ...) is an explicit no-op: Go's switch already does
+// nothing when no case matches, which is exactly the spec §4 catch-all
+// rule.
+func (m *Model) handleSearchKey(msg tea.KeyMsg) {
+	switch msg.Type {
+	case tea.KeyEsc:
+		m.exitSearchMode(true)
+	}
 }

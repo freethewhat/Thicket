@@ -288,3 +288,47 @@ func TestFirstMatch_NoMatchReturnsNegativeOne(t *testing.T) {
 		t.Fatalf("firstMatch with no match = %d, want -1", got)
 	}
 }
+
+func TestUpdate_SlashEntersSearchMode(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	beforeCursor := m.activeCursor
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+
+	if !m.searchMode {
+		t.Fatal("expected searchMode == true after /")
+	}
+	if m.searchQuery != "" {
+		t.Fatalf("searchQuery = %q, want empty", m.searchQuery)
+	}
+	if m.searchNoMatch {
+		t.Fatal("expected searchNoMatch == false right after /")
+	}
+	if m.searchPrevCursor != beforeCursor {
+		t.Fatalf("searchPrevCursor = %d, want %d", m.searchPrevCursor, beforeCursor)
+	}
+}
+
+func TestUpdate_SearchImmediateEscIsNoop(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	prevCursor := m.activeCursor
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("Esc during search must not quit the program")
+	}
+	if m.searchMode {
+		t.Fatal("expected searchMode == false after Esc")
+	}
+	if m.activeCursor != prevCursor {
+		t.Fatalf("activeCursor = %d, want unchanged %d", m.activeCursor, prevCursor)
+	}
+}
