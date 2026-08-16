@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"thicket/internal/fsutil"
 )
 
 func mustMkdir(t *testing.T, path string) {
@@ -257,5 +258,33 @@ func TestUpdate_RightIntoPermissionDeniedSetsStatusErrAndKeepsPath(t *testing.T)
 	}
 	if m.statusErr == "" {
 		t.Fatal("expected statusErr to be set")
+	}
+}
+
+func TestFirstMatch_EmptyQueryReturnsNegativeOne(t *testing.T) {
+	entries := []fsutil.Entry{{Name: "alpha"}, {Name: "beta"}}
+	if got := firstMatch(entries, ""); got != -1 {
+		t.Fatalf("firstMatch with empty query = %d, want -1", got)
+	}
+}
+
+func TestFirstMatch_CaseInsensitiveSubstring(t *testing.T) {
+	entries := []fsutil.Entry{{Name: "Reports"}, {Name: "budget.csv"}}
+	if got := firstMatch(entries, "REPO"); got != 0 {
+		t.Fatalf("firstMatch(%q) = %d, want 0", "REPO", got)
+	}
+}
+
+func TestFirstMatch_ReturnsFirstInListOrderOnMultipleMatches(t *testing.T) {
+	entries := []fsutil.Entry{{Name: "a-report"}, {Name: "b-report"}}
+	if got := firstMatch(entries, "report"); got != 0 {
+		t.Fatalf("firstMatch = %d, want 0 (first in list order)", got)
+	}
+}
+
+func TestFirstMatch_NoMatchReturnsNegativeOne(t *testing.T) {
+	entries := []fsutil.Entry{{Name: "alpha"}, {Name: "beta"}}
+	if got := firstMatch(entries, "zzz"); got != -1 {
+		t.Fatalf("firstMatch with no match = %d, want -1", got)
 	}
 }
