@@ -18,7 +18,7 @@ const (
 )
 
 var (
-	dirStyle      = lipgloss.NewStyle().Bold(true)
+	dirStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
 	symlinkStyle  = lipgloss.NewStyle().Faint(true)
 	selectedStyle = lipgloss.NewStyle().Reverse(true)
 	errStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
