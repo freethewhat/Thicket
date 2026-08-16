@@ -262,3 +262,52 @@ func TestView_InactivePanesUseNormalBorder(t *testing.T) {
 		t.Fatalf("expected an inactive pane to use a normal-border corner (┌):\n%s", out)
 	}
 }
+
+func TestView_StatusLineShowsSearchPromptWhileTyping(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("fi")})
+	m = updated.(Model)
+
+	out := m.View()
+	if !strings.Contains(out, "/fi") {
+		t.Fatalf("expected search prompt \"/fi\" in status line:\n%s", out)
+	}
+}
+
+func TestView_StatusLineShowsNoMatchIndicator(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("zzz")})
+	m = updated.(Model)
+
+	out := m.View()
+	if !strings.Contains(out, "no match") {
+		t.Fatalf("expected \"no match\" indicator in status line:\n%s", out)
+	}
+}
+
+func TestView_StatusLineSearchSuppressesStaleStatusErr(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.statusErr = "open /x: permission denied"
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	out := m.View()
+	if strings.Contains(out, "permission denied") {
+		t.Fatalf("expected stale statusErr suppressed while searching:\n%s", out)
+	}
+	if m.statusErr == "" {
+		t.Fatal("expected statusErr field to remain set (only display suppressed)")
+	}
+}
