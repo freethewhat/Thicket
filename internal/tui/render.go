@@ -9,13 +9,25 @@ import (
 	"thicket/internal/fsutil"
 )
 
-const minColWidth = 15
+const (
+	minColWidth = 15
+	// paneBorderWidth/paneBorderHeight are the screen cells each pane's
+	// border consumes on top of its content (left+right, top+bottom).
+	paneBorderWidth  = 2
+	paneBorderHeight = 2
+)
 
 var (
 	dirStyle      = lipgloss.NewStyle().Bold(true)
 	symlinkStyle  = lipgloss.NewStyle().Faint(true)
 	selectedStyle = lipgloss.NewStyle().Reverse(true)
 	errStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("9"))
+
+	// activePaneStyle marks the pane the user is currently browsing (spec
+	// pane-separation addendum): a thick, bright-yellow border sets it
+	// apart from the thin, dim border on ancestor/preview panes.
+	activePaneStyle   = lipgloss.NewStyle().Border(lipgloss.ThickBorder()).BorderForeground(lipgloss.Color("11")).Bold(true)
+	inactivePaneStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("8"))
 )
 
 // column is a single rendered pane: an ancestor, the active directory, or
@@ -31,6 +43,10 @@ type column struct {
 	highlightIdx int
 	unreadable   bool
 	start        int
+	// active marks the pane the user is currently browsing — always the
+	// current-directory column (or the sole column in single-pane mode) —
+	// so renderColumn can give it a visually distinct border.
+	active bool
 }
 
 func (m Model) View() string {
@@ -40,7 +56,7 @@ func (m Model) View() string {
 	rows := m.visibleRows()
 	cols := m.buildColumns(rows)
 
-	colWidth := m.width / len(cols)
+	colWidth := m.width/len(cols) - paneBorderWidth
 	if colWidth < minColWidth {
 		colWidth = minColWidth
 	}
@@ -56,12 +72,12 @@ func (m Model) View() string {
 }
 
 func (m Model) buildColumns(rows int) []column {
-	maxCols := m.width / minColWidth
+	maxCols := m.width / (minColWidth + paneBorderWidth)
 	if maxCols < 1 {
 		maxCols = 1
 	}
 
-	active := column{entries: m.activeEntries, highlightIdx: m.activeCursor, start: m.activeScroll}
+	active := column{entries: m.activeEntries, highlightIdx: m.activeCursor, start: m.activeScroll, active: true}
 	if maxCols < 2 {
 		return []column{active}
 	}
@@ -159,8 +175,13 @@ func (m Model) buildFilePreviewColumn(entry fsutil.Entry) column {
 }
 
 func renderColumn(c column, width, rows int) string {
+	paneStyle := inactivePaneStyle
+	if c.active {
+		paneStyle = activePaneStyle
+	}
 	if c.unreadable {
-		return lipgloss.NewStyle().Width(width).Height(rows).Render("[permission denied]")
+		inner := lipgloss.NewStyle().Width(width).Height(rows).Render("[permission denied]")
+		return paneStyle.Render(inner)
 	}
 	var b strings.Builder
 	for row := range rows {
@@ -191,8 +212,12 @@ func renderColumn(c column, width, rows int) string {
 	// MaxHeight/MaxWidth bound the rendered block even if a truncated
 	// double-width name still occupies more display cells than its rune
 	// count suggests, so one column can never grow the whole frame past
-	// height/width and push the header off-screen.
-	return lipgloss.NewStyle().Width(width).MaxWidth(width).MaxHeight(rows).Render(b.String())
+	// height/width and push the header off-screen. The border is applied
+	// last so it wraps the sized content block rather than being counted
+	// as part of it (spec: borders cost paneBorderWidth/Height on top of
+	// content dimensions).
+	inner := lipgloss.NewStyle().Width(width).MaxWidth(width).MaxHeight(rows).Render(b.String())
+	return paneStyle.Render(inner)
 }
 
 func (m Model) statusLine() string {

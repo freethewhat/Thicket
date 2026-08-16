@@ -152,8 +152,10 @@ func TestRenderColumn_LongSymlinkFitsColumn(t *testing.T) {
 	if !strings.Contains(got, "@") {
 		t.Fatalf("truncated symlink lost its suffix: %q", got)
 	}
-	if width := lipgloss.Width(got); width != 5 {
-		t.Fatalf("symlink row width = %d, want 5: %q", width, got)
+	// Content width 5 plus the pane's left/right border (paneBorderWidth).
+	want := 5 + paneBorderWidth
+	if width := lipgloss.Width(got); width != want {
+		t.Fatalf("symlink row width = %d, want %d: %q", width, want, got)
 	}
 }
 
@@ -180,8 +182,8 @@ func TestView_ActiveColumnScrollTracksActiveScroll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(%q): %v", root, err)
 	}
-	m.height = 10 // visibleRows() = 8 data rows
-	m.width = 20  // below the 30-column preview threshold: active-only
+	m.height = 10 // visibleRows() = 6 data rows (border rows eat 2 more)
+	m.width = 20  // below the preview threshold: active-only
 
 	down := tea.KeyMsg{Type: tea.KeyDown}
 	up := tea.KeyMsg{Type: tea.KeyUp}
@@ -190,20 +192,20 @@ func TestView_ActiveColumnScrollTracksActiveScroll(t *testing.T) {
 		updated, _ := m.Update(down)
 		m = updated.(Model)
 	}
-	if m.activeCursor != 12 || m.activeScroll != 5 {
-		t.Fatalf("after 12 downs: cursor=%d scroll=%d, want cursor=12 scroll=5", m.activeCursor, m.activeScroll)
+	if m.activeCursor != 12 || m.activeScroll != 7 {
+		t.Fatalf("after 12 downs: cursor=%d scroll=%d, want cursor=12 scroll=7", m.activeCursor, m.activeScroll)
 	}
 	out := m.View()
-	for i := 5; i <= 12; i++ {
+	for i := 7; i <= 12; i++ {
 		name := fmt.Sprintf("n%02d", i)
 		if !strings.Contains(out, name) {
-			t.Fatalf("expected %q visible in window 5-12:\n%s", name, out)
+			t.Fatalf("expected %q visible in window 7-12:\n%s", name, out)
 		}
 	}
-	for _, i := range []int{0, 4, 13, 29} {
+	for _, i := range []int{0, 4, 6, 13, 29} {
 		name := fmt.Sprintf("n%02d", i)
 		if strings.Contains(out, name) {
-			t.Fatalf("did not expect %q visible in window 5-12:\n%s", name, out)
+			t.Fatalf("did not expect %q visible in window 7-12:\n%s", name, out)
 		}
 	}
 
@@ -218,16 +220,45 @@ func TestView_ActiveColumnScrollTracksActiveScroll(t *testing.T) {
 		t.Fatalf("after 9 ups: cursor=%d scroll=%d, want cursor=3 scroll=3 (window must shift back up)", m.activeCursor, m.activeScroll)
 	}
 	out = m.View()
-	for i := 3; i <= 10; i++ {
+	for i := 3; i <= 8; i++ {
 		name := fmt.Sprintf("n%02d", i)
 		if !strings.Contains(out, name) {
-			t.Fatalf("expected %q visible in window 3-10 after scrolling up:\n%s", name, out)
+			t.Fatalf("expected %q visible in window 3-8 after scrolling up:\n%s", name, out)
 		}
 	}
-	for _, i := range []int{0, 2, 11, 29} {
+	for _, i := range []int{0, 2, 9, 29} {
 		name := fmt.Sprintf("n%02d", i)
 		if strings.Contains(out, name) {
-			t.Fatalf("did not expect %q visible in window 3-10 after scrolling up:\n%s", name, out)
+			t.Fatalf("did not expect %q visible in window 3-8 after scrolling up:\n%s", name, out)
 		}
+	}
+}
+
+// TestView_ActivePaneUsesThickBorder covers the new pane-separation UI:
+// the active (current-directory) pane must render with a thick border so
+// the user can tell at a glance which pane they're navigating, distinct
+// from the thin border on ancestor/preview panes.
+func TestView_ActivePaneUsesThickBorder(t *testing.T) {
+	restoreColorProfile(t)
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	out := m.View()
+	if !strings.Contains(out, "┏") {
+		t.Fatalf("expected active pane to use a thick-border corner (┏):\n%s", out)
+	}
+}
+
+// TestView_InactivePanesUseNormalBorder covers the preview pane (never
+// navigable) rendering with a thin, non-active border, distinguishing it
+// from the active pane's thick border.
+func TestView_InactivePanesUseNormalBorder(t *testing.T) {
+	restoreColorProfile(t)
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	out := m.View()
+	if !strings.Contains(out, "┌") {
+		t.Fatalf("expected an inactive pane to use a normal-border corner (┌):\n%s", out)
 	}
 }

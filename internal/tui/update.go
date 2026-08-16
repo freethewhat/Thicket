@@ -90,7 +90,9 @@ func (m *Model) clampScroll() {
 }
 
 func (m *Model) visibleRows() int {
-	rows := m.height - 2 // breadcrumb line + status line
+	// header/status lines (2) + every pane's top/bottom border (2) — see
+	// paneBorderHeight in render.go.
+	rows := m.height - 2 - paneBorderHeight
 	if rows < 1 {
 		rows = 1
 	}
