@@ -24,11 +24,15 @@ type Model struct {
 	searchQuery      string
 	searchNoMatch    bool
 	searchPrevCursor int
-	width            int
-	height           int
-	quitting         bool
-	selected         bool
-	chosenPath       string
+	// helpMode: in-app help screen state (? toggles it open/closed; see
+	// internal/tui/help.go). Mutually exclusive with searchMode — Update's
+	// early-return dispatch order guarantees only one is ever active.
+	helpMode   bool
+	width      int
+	height     int
+	quitting   bool
+	selected   bool
+	chosenPath string
 }
 
 // New builds a Model rooted at startPath. startPath must be readable;

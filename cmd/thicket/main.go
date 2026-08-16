@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -13,7 +14,13 @@ import (
 func main() {
 	start := "."
 	if len(os.Args) > 1 {
-		start = os.Args[1]
+		switch os.Args[1] {
+		case "-h", "--help":
+			fmt.Print(helpText())
+			return
+		default:
+			start = os.Args[1]
+		}
 	}
 
 	m, err := tui.New(start)
@@ -64,4 +71,23 @@ func main() {
 func writeSelection(w io.Writer, path string) error {
 	_, err := fmt.Fprintln(w, path)
 	return err
+}
+
+// helpText builds the --help output: usage plus the same keybinding table
+// shown by the in-app ? help screen (tui.Keybindings) and documented in
+// man/thicket.1 — keep all three in sync when a binding changes.
+func helpText() string {
+	var b strings.Builder
+	b.WriteString("thicket - Miller-column TUI file browser for the terminal\n\n")
+	b.WriteString("Usage:\n")
+	b.WriteString("  thicket [path]\n")
+	b.WriteString("  thicket -h | --help\n\n")
+	b.WriteString("Arguments:\n")
+	b.WriteString("  path    Directory to start browsing in (default: current directory)\n\n")
+	b.WriteString("Keys:\n")
+	for _, kb := range tui.Keybindings {
+		fmt.Fprintf(&b, "  %-16s%s\n", kb.Keys, kb.Action)
+	}
+	b.WriteString("\nSee man thicket for more.\n")
+	return b.String()
 }

@@ -7,8 +7,9 @@ directory.
 ## Install
 
 ```sh
-go build -o thicket ./cmd/thicket
-sudo install -m 755 thicket /usr/local/bin/thicket
+go build -o thicket-bin ./cmd/thicket
+sudo install -m 755 thicket-bin /usr/local/bin/thicket-bin
+sudo install -m 644 man/thicket.1 /usr/local/share/man/man1/thicket.1
 ```
 
 Then source the shell wrapper for your shell:
@@ -21,13 +22,14 @@ source /path/to/thicket/shell/thicket.bash
 source /path/to/thicket/shell/thicket.zsh
 ```
 
-This defines a `th` shell function. Rename it in your rc file if you'd
-rather use a different name — the `thicket` binary itself doesn't care
-what the wrapper is called.
+This defines a `thicket` shell function. Rename it in your rc file if
+you'd rather use a different name — the `thicket-bin` binary itself
+doesn't care what the wrapper is called.
 
 ## Usage
 
-Run `th` (or `th /some/path` to start elsewhere). Keys:
+Run `thicket` (or `thicket /some/path` to start elsewhere; `thicket --help`
+for a summary, `man thicket` for the full manual). Keys:
 
 | Key(s) | Action |
 |---|---|
@@ -40,6 +42,7 @@ Run `th` (or `th /some/path` to start elsewhere). Keys:
 | `.` | Toggle hidden (dotfile) visibility (default off) |
 | `r` | Refresh the active directory's listing |
 | `/` | Type-ahead search the active column: type to jump to the first matching entry; `Enter` keeps the match, `Esc` cancels back to where the cursor was |
+| `?` | Toggle the in-app help screen |
 
 Navigation only in v1 — no file create/rename/delete/copy/move, no config
 file.

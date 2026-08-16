@@ -5,7 +5,7 @@
 `thicket` is a Go Miller-column TUI file browser for the terminal. It
 replaces `cd`/`ls` navigation with a visual multi-column browser (arrow keys
 or vi keys `hjkl`); pressing `Enter` `cd`s the *calling shell* into the
-selected directory by having a shell wrapper function (`th`) capture the
+selected directory by having a shell wrapper function (`thicket`) capture the
 program's stdout. Module path: `thicket` (unpublished, local module).
 v1 scope is intentionally locked to navigation only — no file
 create/rename/delete/copy/move, no config file, no mouse support, no
@@ -73,7 +73,8 @@ th (shell function) → thicket binary (/dev/tty for UI) → stdout: chosen path
 | `cmd/thicket/` | CLI entry point (`main.go`); process/tty wiring, exit codes |
 | `internal/tui/` | Bubble Tea `Model`/`Update`/`View` — navigation state machine and rendering |
 | `internal/fsutil/` | Pure filesystem helpers — directory listing, entry classification, file preview |
-| `shell/` | `th` shell-function wrappers for bash and zsh (source into rc files) |
+| `shell/` | `thicket` shell-function wrappers for bash and zsh (source into rc files) |
+| `man/` | `thicket.1` troff man page (`man thicket` after install) |
 | `docs/superpowers/plans/` | Implementation plan doc(s) — task breakdown with code templates |
 | `docs/superpowers/specs/` | Design spec doc(s) — authoritative source for UX/behavior decisions (e.g. exit codes, layout thresholds, non-goals) |
 
@@ -83,10 +84,10 @@ No Makefile/justfile/CI config exists — use the Go toolchain directly.
 
 ```sh
 # Build the binary
-go build -o thicket ./cmd/thicket
+go build -o thicket-bin ./cmd/thicket
 
 # Install system-wide (README-documented flow)
-sudo install -m 755 thicket /usr/local/bin/thicket
+sudo install -m 755 thicket-bin /usr/local/bin/thicket-bin
 
 # Run all tests
 go test ./...
@@ -147,7 +148,9 @@ Manual run without installing: `go run ./cmd/thicket [path]`.
 | `internal/fsutil/listing.go` | `ListDir`, `IndexOfName`, `classify` — directory reading/sorting/symlink classification |
 | `internal/fsutil/preview.go` | `ReadFilePreview`/`FilePreview` — binary detection, text line splitting |
 | `internal/tui/search.go` | `firstMatch` — pure case-insensitive substring search over an already-loaded entry list, used by type-ahead search |
+| `internal/tui/help.go` | `Keybindings` (single source of truth for the `?` help screen and `cmd/thicket --help`) and `renderHelp` |
 | `shell/thicket.bash`, `shell/thicket.zsh` | `th()` wrapper functions that `cd` the calling shell |
+| `man/thicket.1` | Troff man page — NAME/SYNOPSIS/OPTIONS/KEYS/EXIT STATUS/SHELL INTEGRATION, hand-maintained in sync with `internal/tui/help.go` and the README table |
 | `go.mod` | Module `thicket`, Go 1.24.6, pins `bubbletea` to v1.x (not v2) |
 | `README.md` | Install/usage instructions and the full keybinding table |
 | `docs/superpowers/specs/2026-08-15-thicket-tui-file-browser-design.md` | Authoritative design spec (exit codes, layout thresholds, v1 non-goals) |
@@ -167,8 +170,8 @@ Manual run without installing: `go run ./cmd/thicket [path]`.
   `.github/workflows`), **no Makefile/Dockerfile/.editorconfig/LICENSE** —
   rely on `gofmt`/`go vet`/`go build`/`go test` directly.
 - `.gitignore` only excludes `.worktrees/` and `.superpowers/` — the built
-  `thicket` binary is not gitignored; avoid committing it if you build
-  in-repo (`go build -o thicket ./cmd/thicket` from the README literally
+  `thicket-bin` binary is not gitignored; avoid committing it if you build
+  in-repo (`go build -o thicket-bin ./cmd/thicket` from the README literally
   writes it to the repo root).
 
 ## Testing & QA
@@ -195,7 +198,7 @@ Manual run without installing: `go run ./cmd/thicket [path]`.
   covered by string-content assertions on `View()` output at specific
   terminal widths (regression tests explicitly reference past bugs, e.g.
   `TestView_StatusLineAt80ColumnsStillShowsError`). Shell integration
-  (`th` wrapper + `/dev/tty` behavior) is **not automated** — it's a
+  (`thicket` wrapper + `/dev/tty` behavior) is **not automated** — it's a
   manual smoke test only, since it requires a real terminal.
 - When adding behavior to `Update`/`ListDir`/`ReadFilePreview`, add a
   matching `TestXxx_Behavior`-style case in the corresponding `*_test.go`

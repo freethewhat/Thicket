@@ -696,3 +696,96 @@ func TestUpdate_WindowResizeWorksDuringSearch(t *testing.T) {
 		t.Fatalf("resize must not disturb search state: searchMode=%v searchQuery=%q", m.searchMode, m.searchQuery)
 	}
 }
+
+func TestUpdate_QuestionMarkOpensHelpMode(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("opening help must not produce a command")
+	}
+	if !m.helpMode {
+		t.Fatal("expected helpMode = true after ?")
+	}
+}
+
+func TestUpdate_QuestionMarkTogglesHelpModeClosed(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(Model)
+
+	if m.helpMode {
+		t.Fatal("expected second ? to close help mode")
+	}
+}
+
+func TestUpdate_EscAndQCloseHelpModeWithoutQuitting(t *testing.T) {
+	for _, key := range []tea.KeyMsg{
+		{Type: tea.KeyEsc},
+		{Type: tea.KeyRunes, Runes: []rune("q")},
+	} {
+		root := setupFixture(t)
+		m := newTestModel(t, root)
+
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+		m = updated.(Model)
+
+		updated, cmd := m.Update(key)
+		m = updated.(Model)
+
+		if cmd != nil {
+			t.Fatalf("key %v must close help, not quit the program", key)
+		}
+		if m.helpMode {
+			t.Fatalf("key %v should have closed help mode", key)
+		}
+		if m.quitting || m.selected {
+			t.Fatalf("key %v must not set quitting/selected while closing help", key)
+		}
+	}
+}
+
+func TestUpdate_HelpModeSwallowsNavigationKeys(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(Model)
+	beforeCursor := m.activeCursor
+
+	for _, kt := range []tea.KeyType{tea.KeyDown, tea.KeyUp, tea.KeyRight, tea.KeyLeft} {
+		updated, cmd := m.Update(tea.KeyMsg{Type: kt})
+		m = updated.(Model)
+		if cmd != nil {
+			t.Fatalf("key %v produced a command while helpMode", kt)
+		}
+	}
+	if m.activeCursor != beforeCursor || !m.helpMode {
+		t.Fatal("navigation keys must be no-ops while helpMode is active")
+	}
+}
+
+func TestUpdate_CtrlCQuitsEvenDuringHelp(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = updated.(Model)
+
+	if cmd == nil {
+		t.Fatal("expected Ctrl-C to quit even while helpMode is active")
+	}
+	if m.selected {
+		t.Fatal("Ctrl-C must not select a path")
+	}
+}
