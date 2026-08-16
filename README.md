@@ -39,6 +39,7 @@ Run `th` (or `th /some/path` to start elsewhere). Keys:
 | `q`, `Esc`, `Ctrl-C` | Quit without changing directory |
 | `.` | Toggle hidden (dotfile) visibility (default off) |
 | `r` | Refresh the active directory's listing |
+| `/` | Type-ahead search the active column: type to jump to the first matching entry; `Enter` keeps the match, `Esc` cancels back to where the cursor was |
 
-Navigation only in v1 — no file create/rename/delete/copy/move, no search,
-no config file.
+Navigation only in v1 — no file create/rename/delete/copy/move, no config
+file.
