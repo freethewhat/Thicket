@@ -15,6 +15,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clampScroll()
 		return m, nil
 	case tea.KeyMsg:
+		if msg.Type == tea.KeyCtrlC {
+			m.quitting = true
+			m.selected = false
+			return m, tea.Quit
+		}
 		if m.searchMode {
 			m.handleSearchKey(msg)
 			return m, nil
@@ -31,7 +36,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			m.handleEnter()
 			return m, tea.Quit
-		case "q", "esc", "ctrl+c":
+		case "q", "esc":
 			m.quitting = true
 			m.selected = false
 			return m, tea.Quit

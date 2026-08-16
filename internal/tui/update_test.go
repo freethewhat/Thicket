@@ -595,3 +595,104 @@ func TestUpdate_SearchImmediateEnterIsNoop(t *testing.T) {
 		t.Fatalf("activeCursor = %d, want unchanged %d", m.activeCursor, prevCursor)
 	}
 }
+
+func TestUpdate_CtrlCQuitsEvenDuringSearch(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = updated.(Model)
+
+	if cmd == nil {
+		t.Fatal("expected Ctrl-C to quit even while searching")
+	}
+	if _, ok := m.Result(); ok {
+		t.Fatal("expected selected == false on Ctrl-C during search")
+	}
+}
+
+func TestUpdate_SearchArrowKeysAreNoOps(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	beforeCursor, beforeQuery := m.activeCursor, m.searchQuery
+
+	for _, kt := range []tea.KeyType{tea.KeyUp, tea.KeyDown, tea.KeyLeft, tea.KeyRight} {
+		updated, cmd := m.Update(tea.KeyMsg{Type: kt})
+		m = updated.(Model)
+		if cmd != nil {
+			t.Fatalf("arrow key %v produced a command while searching", kt)
+		}
+	}
+
+	if m.activeCursor != beforeCursor {
+		t.Fatalf("activeCursor = %d, want unchanged %d", m.activeCursor, beforeCursor)
+	}
+	if m.searchQuery != beforeQuery {
+		t.Fatalf("searchQuery = %q, want unchanged %q", m.searchQuery, beforeQuery)
+	}
+	if !m.searchMode {
+		t.Fatal("expected still in searchMode")
+	}
+}
+
+func TestUpdate_SearchTabAndOtherControlKeysAreNoOps(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	beforeCursor, beforeQuery := m.activeCursor, m.searchQuery
+
+	for _, kt := range []tea.KeyType{tea.KeyTab, tea.KeyCtrlU, tea.KeyHome, tea.KeyPgUp, tea.KeyF1} {
+		updated, cmd := m.Update(tea.KeyMsg{Type: kt})
+		m = updated.(Model)
+		if cmd != nil {
+			t.Fatalf("key %v produced a command while searching", kt)
+		}
+	}
+
+	if m.activeCursor != beforeCursor {
+		t.Fatalf("activeCursor = %d, want unchanged %d", m.activeCursor, beforeCursor)
+	}
+	if m.searchQuery != beforeQuery {
+		t.Fatalf("searchQuery = %q, want unchanged %q", m.searchQuery, beforeQuery)
+	}
+	if !m.searchMode {
+		t.Fatal("expected still in searchMode")
+	}
+}
+
+func TestUpdate_WindowResizeWorksDuringSearch(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 15})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("resize must not quit the program")
+	}
+	if m.width != 60 || m.height != 15 {
+		t.Fatalf("width/height = %d/%d, want 60/15", m.width, m.height)
+	}
+	if !m.searchMode || m.searchQuery != "f" {
+		t.Fatalf("resize must not disturb search state: searchMode=%v searchQuery=%q", m.searchMode, m.searchQuery)
+	}
+}
