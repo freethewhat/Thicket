@@ -1,0 +1,115 @@
+.TH THICKET 1 "2026-08-16" "thicket" "User Commands"
+.SH NAME
+thicket \- Miller-column TUI file browser for the terminal
+.SH SYNOPSIS
+.B thicket
+.RI [ path ]
+.br
+.B thicket
+.RB { \-h | \-\-help }
+.SH DESCRIPTION
+.B thicket
+is a terminal file browser using a Miller-column (multi-pane) layout, similar
+to macOS Finder's column view. It replaces
+.BR cd (1)
+and
+.BR ls (1)
+navigation with a visual, arrow-key-driven browser: pressing Enter changes
+the calling shell's directory to the one selected, via a shell wrapper
+function (see
+.B SHELL INTEGRATION
+below) that captures the program's stdout.
+.PP
+.B thicket
+itself never changes the calling shell's working directory \- only the
+.B th
+wrapper function does, by reading the path
+.B thicket
+prints to stdout on exit.
+.SH OPTIONS
+.TP
+.RI [ path ]
+Directory to start browsing in. Defaults to the current directory.
+.TP
+.BR \-h ", " \-\-help
+Print usage and the keybinding table to stdout, then exit.
+.SH KEYS
+.TP
+.BR Up ", " k
+Move selection up.
+.TP
+.BR Down ", " j
+Move selection down.
+.TP
+.BR Right ", " l
+Open the selected directory and move focus right. No-op on files.
+.TP
+.BR Left ", " h
+Go up one directory and move focus left. No-op at
+.IR / .
+.TP
+.B Enter
+Choose: cd to the selected directory, or to the active directory if a
+file or empty directory is selected; then exit.
+.TP
+.BR q ", " Esc ", " Ctrl-C
+Quit without changing directory.
+.TP
+.B .
+Toggle hidden (dotfile) visibility. Off by default.
+.TP
+.B r
+Refresh the active directory's listing.
+.TP
+.B /
+Type-ahead search the active column: type to jump to the first matching
+entry.
+.B Enter
+keeps the match,
+.B Esc
+cancels back to where the cursor was.
+.TP
+.B ?
+Toggle the in-app help screen (this key table). Any other key is ignored
+while the help screen is open; press
+.B ?
+or
+.B Esc
+to close it.
+.SH EXIT STATUS
+.TP
+.B 0
+A directory was selected (see
+.B SHELL INTEGRATION
+below); its path was printed to stdout.
+.TP
+.B 1
+The user quit without selecting (q, Esc, or Ctrl-C).
+.TP
+.B 2
+A setup or runtime error occurred (e.g. the starting directory was
+unreadable, or the controlling terminal could not be opened). Details are
+printed to stderr.
+.SH SHELL INTEGRATION
+.B thicket
+prints the selected path to stdout and exits; it does not itself change
+any shell's working directory. Source one of the provided wrapper
+scripts to get a
+.B th
+shell function that captures that output and
+.BR cd (1)
+s into it:
+.PP
+.RS
+.nf
+source /path/to/thicket/shell/thicket.bash   # bash
+source /path/to/thicket/shell/thicket.zsh    # zsh
+.fi
+.RE
+.SH NON-GOALS
+.B thicket
+is navigation-only: no file create/rename/delete/copy/move, no config
+file, no mouse support, no filesystem watching.
+.SH SEE ALSO
+.BR cd (1),
+.BR ls (1)

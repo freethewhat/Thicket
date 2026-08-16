@@ -73,6 +73,10 @@ func (m Model) View() string {
 		return ""
 	}
 	rows := m.visibleRows()
+	header := truncate(m.activePath, m.width)
+	if m.helpMode {
+		return header + "\n" + m.renderHelp(rows) + "\n" + m.statusLine()
+	}
 	cols := m.buildColumns(rows)
 
 	colWidth := m.width/len(cols) - paneBorderWidth
@@ -86,7 +90,6 @@ func (m Model) View() string {
 	}
 	body := lipgloss.JoinHorizontal(lipgloss.Top, rendered...)
 
-	header := truncate(m.activePath, m.width)
 	return header + "\n" + body + "\n" + m.statusLine()
 }
 
@@ -240,14 +243,18 @@ func renderColumn(c column, width, rows int) string {
 }
 
 func (m Model) statusLine() string {
-	hints := "↑/k ↓/j move · →/l open · ←/h up · Enter cd+exit · . hidden · r refresh · / search · q quit"
+	hints := "↑/k ↓/j move · →/l open · ←/h up · Enter cd+exit · . hidden · r refresh · / search · ? help · q quit"
 	left := hints
 	right := m.activePath
 	isErr := m.statusErr != ""
 	if isErr {
 		right = m.statusErr
 	}
-	if m.searchMode {
+	if m.helpMode {
+		left = "? / Esc: close help"
+		right = m.activePath
+		isErr = false
+	} else if m.searchMode {
 		// The right slot is dedicated to search state for the whole
 		// session — a stale statusErr from before / was pressed is not
 		// displayed (spec §6); the statusErr field itself is untouched.

@@ -311,3 +311,23 @@ func TestView_StatusLineSearchSuppressesStaleStatusErr(t *testing.T) {
 		t.Fatal("expected statusErr field to remain set (only display suppressed)")
 	}
 }
+
+func TestView_HelpModeShowsKeybindingsAndHidesColumns(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(Model)
+
+	out := m.View()
+
+	if !strings.Contains(out, "Keybindings") {
+		t.Fatalf("expected help screen title:\n%s", out)
+	}
+	if !strings.Contains(out, "Move selection up") {
+		t.Fatalf("expected keybinding description in help screen:\n%s", out)
+	}
+	if strings.Contains(out, "sub") || strings.Contains(out, "file.txt") {
+		t.Fatalf("help screen must not show the normal column layout:\n%s", out)
+	}
+}

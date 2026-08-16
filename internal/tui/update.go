@@ -20,6 +20,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.selected = false
 			return m, tea.Quit
 		}
+		if m.helpMode {
+			switch msg.String() {
+			case "?", "q", "esc":
+				m.helpMode = false
+			}
+			return m, nil
+		}
 		if m.searchMode {
 			m.handleSearchKey(msg)
 			return m, nil
@@ -47,6 +54,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reload()
 		case "/":
 			m.enterSearchMode()
+		case "?":
+			m.helpMode = true
 		}
 	}
 	return m, nil
