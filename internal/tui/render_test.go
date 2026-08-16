@@ -371,3 +371,85 @@ func TestView_HelpModeShowsKeybindingsAndHidesColumns(t *testing.T) {
 		t.Fatalf("help screen must not show the normal column layout:\n%s", out)
 	}
 }
+
+func TestView_MarksListEmptyShowsNoMarksSetMessage(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.marksListMode = true
+	m.marksCursor = -1
+
+	out := m.View()
+
+	if !strings.Contains(out, "no marks set") {
+		t.Fatalf("View() missing empty-marks message:\n%s", out)
+	}
+}
+
+func TestView_MarksListShowsSortedLetterPathRows(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.markTable['b'] = "/second"
+	m.markTable['a'] = "/first"
+	m.marksListMode = true
+	m.marksCursor = 0
+
+	out := m.View()
+
+	aIdx := strings.Index(out, "/first")
+	bIdx := strings.Index(out, "/second")
+	if aIdx == -1 || bIdx == -1 || bIdx < aIdx {
+		t.Fatalf("expected 'a' row before 'b' row (sorted):\n%s", out)
+	}
+}
+
+func TestView_MarksListHighlightsCursorRow(t *testing.T) {
+	restoreColorProfile(t)
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.markTable['a'] = "/first"
+	m.marksListMode = true
+	m.marksCursor = 0
+
+	out := m.renderMarksList(m.visibleRows())
+
+	want := selectedStyle.Render(truncate(fmt.Sprintf("%c  %s", 'a', "/first"), m.width-paneBorderWidth))
+	if !strings.Contains(out, want) {
+		t.Fatalf("renderMarksList() missing highlighted row:\n%s\nwant substring:\n%s", out, want)
+	}
+}
+
+func TestView_StatusLineShowsMarkSetPrompt(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	m.markSetPending = true
+
+	if !strings.Contains(m.statusLine(), "mark: _") {
+		t.Fatalf("statusLine() missing mark-set prompt: %q", m.statusLine())
+	}
+}
+
+func TestView_StatusLineShowsMarkJumpPrompt(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	m.markJumpPending = true
+
+	if !strings.Contains(m.statusLine(), "jump to mark: _") {
+		t.Fatalf("statusLine() missing mark-jump prompt: %q", m.statusLine())
+	}
+}
+
+func TestView_StatusLineShowsMarksListHints(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	m.marksListMode = true
+
+	got := m.statusLine()
+	for _, want := range []string{"move", "jump", "delete", "close"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("statusLine() missing %q: %q", want, got)
+		}
+	}
+}
