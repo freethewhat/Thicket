@@ -17,11 +17,18 @@ type Model struct {
 	activeScroll  int
 	showHidden    bool
 	statusErr     string
-	width         int
-	height        int
-	quitting      bool
-	selected      bool
-	chosenPath    string
+	// searchMode/searchQuery/searchNoMatch/searchPrevCursor: type-ahead
+	// search state (spec docs/superpowers/specs/2026-08-16-thicket-type-ahead-search-design.md).
+	// Zero-valued at construction — no change to New()'s behavior.
+	searchMode       bool
+	searchQuery      string
+	searchNoMatch    bool
+	searchPrevCursor int
+	width            int
+	height           int
+	quitting         bool
+	selected         bool
+	chosenPath       string
 }
 
 // New builds a Model rooted at startPath. startPath must be readable;

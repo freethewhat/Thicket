@@ -15,6 +15,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clampScroll()
 		return m, nil
 	case tea.KeyMsg:
+		if msg.Type == tea.KeyCtrlC {
+			m.quitting = true
+			m.selected = false
+			return m, tea.Quit
+		}
+		if m.searchMode {
+			m.handleSearchKey(msg)
+			return m, nil
+		}
 		switch msg.String() {
 		case "up", "k":
 			m.moveCursor(-1)
@@ -27,7 +36,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			m.handleEnter()
 			return m, tea.Quit
-		case "q", "esc", "ctrl+c":
+		case "q", "esc":
 			m.quitting = true
 			m.selected = false
 			return m, tea.Quit
@@ -36,6 +45,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reload()
 		case "r":
 			m.reload()
+		case "/":
+			m.enterSearchMode()
 		}
 	}
 	return m, nil
@@ -174,4 +185,77 @@ func (m *Model) handleEnter() {
 		return
 	}
 	m.chosenPath = m.activePath
+}
+
+// enterSearchMode opens the type-ahead search prompt (spec §4). It never
+// touches activeEntries/activePath — only the query state and a saved
+// cursor to restore on cancel.
+func (m *Model) enterSearchMode() {
+	m.searchMode = true
+	m.searchQuery = ""
+	m.searchNoMatch = false
+	m.searchPrevCursor = m.activeCursor
+}
+
+// exitSearchMode closes the prompt. If restoreCursor is true, activeCursor
+// is reset to the value it had before / was pressed (Esc / empty-backspace
+// behavior, spec §4); otherwise activeCursor is left wherever the search
+// moved it (Enter behavior).
+func (m *Model) exitSearchMode(restoreCursor bool) {
+	m.searchMode = false
+	m.searchQuery = ""
+	m.searchNoMatch = false
+	if restoreCursor {
+		m.activeCursor = m.searchPrevCursor
+		m.clampScroll()
+	}
+}
+
+// handleSearchKey processes one key while searchMode is true (spec §4).
+// Discriminates on msg.Type, not msg.String() — see Global Constraints.
+// Any msg.Type not matched by a case below (arrows, Tab, Ctrl-U, Home,
+// PageUp, F-keys, ...) is an explicit no-op: Go's switch already does
+// nothing when no case matches, which is exactly the spec §4 catch-all
+// rule.
+func (m *Model) handleSearchKey(msg tea.KeyMsg) {
+	switch msg.Type {
+	case tea.KeyRunes:
+		m.appendQuery(msg.Runes...)
+	case tea.KeySpace:
+		m.appendQuery(' ')
+	case tea.KeyBackspace:
+		if m.searchQuery == "" {
+			m.exitSearchMode(true)
+			return
+		}
+		runes := []rune(m.searchQuery)
+		m.searchQuery = string(runes[:len(runes)-1])
+		m.applySearchMatch()
+	case tea.KeyEnter:
+		m.exitSearchMode(false)
+	case tea.KeyEsc:
+		m.exitSearchMode(true)
+	}
+}
+
+// appendQuery adds runes to searchQuery and re-runs the match. A single
+// KeyMsg can carry more than one rune (bracketed paste, composed input),
+// so callers pass every rune from one message, not just the first.
+func (m *Model) appendQuery(runes ...rune) {
+	m.searchQuery += string(runes)
+	m.applySearchMatch()
+}
+
+// applySearchMatch re-jumps activeCursor to firstMatch(activeEntries,
+// searchQuery), always searching from the top of the list (spec §5). On no
+// match, activeCursor is left unchanged and searchNoMatch is set.
+func (m *Model) applySearchMatch() {
+	i := firstMatch(m.activeEntries, m.searchQuery)
+	if i < 0 {
+		m.searchNoMatch = true
+		return
+	}
+	m.activeCursor = i
+	m.searchNoMatch = false
+	m.clampScroll()
 }

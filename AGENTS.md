@@ -8,8 +8,11 @@ or vi keys `hjkl`); pressing `Enter` `cd`s the *calling shell* into the
 selected directory by having a shell wrapper function (`th`) capture the
 program's stdout. Module path: `thicket` (unpublished, local module).
 v1 scope is intentionally locked to navigation only — no file
-create/rename/delete/copy/move, no search, no config file, no mouse
-support, no filesystem watching (see `docs/superpowers/specs/2026-08-15-thicket-tui-file-browser-design.md` §3).
+create/rename/delete/copy/move, no config file, no mouse support, no
+filesystem watching (see `docs/superpowers/specs/2026-08-15-thicket-tui-file-browser-design.md`
+§3). A `/`-triggered type-ahead cursor search within the active column was
+added afterward, per `docs/superpowers/specs/2026-08-16-thicket-type-ahead-search-design.md`,
+which amends that one non-goal — every other v1 non-goal in §3 still holds.
 
 ## Architecture & Data Flow
 
@@ -143,6 +146,7 @@ Manual run without installing: `go run ./cmd/thicket [path]`.
 | `internal/fsutil/entry.go` | `Entry` struct (Name, IsDir, IsSymlink, Broken, Size, ModTime) |
 | `internal/fsutil/listing.go` | `ListDir`, `IndexOfName`, `classify` — directory reading/sorting/symlink classification |
 | `internal/fsutil/preview.go` | `ReadFilePreview`/`FilePreview` — binary detection, text line splitting |
+| `internal/tui/search.go` | `firstMatch` — pure case-insensitive substring search over an already-loaded entry list, used by type-ahead search |
 | `shell/thicket.bash`, `shell/thicket.zsh` | `th()` wrapper functions that `cd` the calling shell |
 | `go.mod` | Module `thicket`, Go 1.24.6, pins `bubbletea` to v1.x (not v2) |
 | `README.md` | Install/usage instructions and the full keybinding table |

@@ -240,13 +240,26 @@ func renderColumn(c column, width, rows int) string {
 }
 
 func (m Model) statusLine() string {
-	hints := "↑/k ↓/j move · →/l open · ←/h up · Enter cd+exit · . hidden · r refresh · q quit"
+	hints := "↑/k ↓/j move · →/l open · ←/h up · Enter cd+exit · . hidden · r refresh · / search · q quit"
+	left := hints
 	right := m.activePath
 	isErr := m.statusErr != ""
 	if isErr {
 		right = m.statusErr
 	}
-	return composeStatusLine(hints, right, isErr, m.width)
+	if m.searchMode {
+		// The right slot is dedicated to search state for the whole
+		// session — a stale statusErr from before / was pressed is not
+		// displayed (spec §6); the statusErr field itself is untouched.
+		left = "/" + m.searchQuery
+		right = m.activePath
+		isErr = false
+		if m.searchNoMatch {
+			right = "no match"
+			isErr = true
+		}
+	}
+	return composeStatusLine(left, right, isErr, m.width)
 }
 
 // composeStatusLine lays hints on the left and statusErr-or-activePath on
