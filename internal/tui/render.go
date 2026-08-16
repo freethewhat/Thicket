@@ -243,7 +243,7 @@ func renderColumn(c column, width, rows int) string {
 }
 
 func (m Model) statusLine() string {
-	hints := "↑/k ↓/j move · →/l open · ←/h up · Enter cd+exit · . hidden · r refresh · / search · ? help · q quit"
+	hints := "↑/k ↓/j move · PgUp/PgDn page · Home/End top/bottom · →/l open · ←/h up · Enter cd+exit · . hidden · r refresh · / search · ? help · q quit"
 	left := hints
 	right := m.activePath
 	isErr := m.statusErr != ""
