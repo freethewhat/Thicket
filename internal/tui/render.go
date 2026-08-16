@@ -30,6 +30,25 @@ var (
 	inactivePaneStyle = lipgloss.NewStyle().Border(lipgloss.NormalBorder()).BorderForeground(lipgloss.Color("8"))
 )
 
+// SetRenderer rebinds every package-level style to r. lipgloss.NewStyle()
+// captures a reference to the *current* default renderer at call time, and
+// the styles above are built as package vars — during Go's init phase,
+// before main() can point lipgloss at the real terminal (thicket renders to
+// a dedicated /dev/tty handle, not os.Stdout). Without this, later calls to
+// lipgloss.SetDefaultRenderer have no effect on these already-built styles:
+// they keep rendering against whatever renderer was default at init, which
+// detects color support from os.Stdout — a pipe when invoked through the
+// th wrapper's `dir=$(command thicket ...)`, so all color/border output
+// silently drops even though the profile reported elsewhere is correct.
+func SetRenderer(r *lipgloss.Renderer) {
+	dirStyle = dirStyle.Renderer(r)
+	symlinkStyle = symlinkStyle.Renderer(r)
+	selectedStyle = selectedStyle.Renderer(r)
+	errStyle = errStyle.Renderer(r)
+	activePaneStyle = activePaneStyle.Renderer(r)
+	inactivePaneStyle = inactivePaneStyle.Renderer(r)
+}
+
 // column is a single rendered pane: an ancestor, the active directory, or
 // the preview. highlightIdx is -1 when the pane has no highlighted row
 // (ancestors and previews don't carry their own cursor — see spec §5).
