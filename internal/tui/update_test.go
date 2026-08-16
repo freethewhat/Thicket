@@ -332,3 +332,149 @@ func TestUpdate_SearchImmediateEscIsNoop(t *testing.T) {
 		t.Fatalf("activeCursor = %d, want unchanged %d", m.activeCursor, prevCursor)
 	}
 }
+
+func TestUpdate_SearchTypingJumpsToFirstMatch(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	want := fsutil.IndexOfName(m.activeEntries, "file.txt")
+	if m.activeCursor != want {
+		t.Fatalf("activeCursor = %d, want %d (file.txt)", m.activeCursor, want)
+	}
+	if m.searchNoMatch {
+		t.Fatal("expected searchNoMatch == false")
+	}
+}
+
+func TestUpdate_SearchNoMatchKeepsCursorAndSetsFlag(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	prevCursor := m.activeCursor
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("z")})
+	m = updated.(Model)
+
+	if m.activeCursor != prevCursor {
+		t.Fatalf("activeCursor = %d, want unchanged %d", m.activeCursor, prevCursor)
+	}
+	if !m.searchNoMatch {
+		t.Fatal("expected searchNoMatch == true")
+	}
+}
+
+func TestUpdate_SearchSpaceKeyAppendsLiteralSpace(t *testing.T) {
+	root := setupFixture(t)
+	mustMkdir(t, filepath.Join(root, "My Documents"))
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("My")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Doc")})
+	m = updated.(Model)
+
+	if m.searchQuery != "My Doc" {
+		t.Fatalf("searchQuery = %q, want %q", m.searchQuery, "My Doc")
+	}
+	want := fsutil.IndexOfName(m.activeEntries, "My Documents")
+	if m.activeCursor != want {
+		t.Fatalf("activeCursor = %d, want %d (My Documents)", m.activeCursor, want)
+	}
+}
+
+func TestUpdate_SearchMultiRuneKeyMsgAppendsAllRunes(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("fil")})
+	m = updated.(Model)
+
+	if m.searchQuery != "fil" {
+		t.Fatalf("searchQuery = %q, want %q", m.searchQuery, "fil")
+	}
+	want := fsutil.IndexOfName(m.activeEntries, "file.txt")
+	if m.activeCursor != want {
+		t.Fatalf("activeCursor = %d, want %d (file.txt)", m.activeCursor, want)
+	}
+}
+
+func TestUpdate_SearchLettersLikeQAndHDoNotTriggerNavCommands(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	for _, r := range "qhjklr." {
+		updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		m = updated.(Model)
+		if cmd != nil {
+			t.Fatalf("key %q produced a command (expected none) while searching", r)
+		}
+	}
+
+	if !m.searchMode {
+		t.Fatal("expected still in searchMode after typing q/h/j/k/l/r/.")
+	}
+	if m.searchQuery != "qhjklr." {
+		t.Fatalf("searchQuery = %q, want %q", m.searchQuery, "qhjklr.")
+	}
+}
+
+func TestUpdate_SlashOnEmptyDirectorySetsNoMatchImmediately(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, filepath.Join(root, "sub", "grand"))
+	if m.activeCursor != -1 {
+		t.Fatalf("precondition: activeCursor = %d, want -1 (empty dir)", m.activeCursor)
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = updated.(Model)
+
+	if !m.searchNoMatch {
+		t.Fatal("expected searchNoMatch == true on empty directory")
+	}
+	if m.activeCursor != -1 {
+		t.Fatalf("activeCursor = %d, want -1 (unchanged)", m.activeCursor)
+	}
+}
+
+func TestUpdate_SearchEscRestoresPreSearchCursor(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	prevCursor := m.activeCursor
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	if m.activeCursor == prevCursor {
+		t.Fatal("precondition: expected cursor to move off its pre-search position")
+	}
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("Esc during search must not quit the program")
+	}
+	if m.searchMode {
+		t.Fatal("expected searchMode == false after Esc")
+	}
+	if m.activeCursor != prevCursor {
+		t.Fatalf("activeCursor = %d, want restored %d", m.activeCursor, prevCursor)
+	}
+}

@@ -214,7 +214,33 @@ func (m *Model) exitSearchMode(restoreCursor bool) {
 // rule.
 func (m *Model) handleSearchKey(msg tea.KeyMsg) {
 	switch msg.Type {
+	case tea.KeyRunes:
+		m.appendQuery(msg.Runes...)
+	case tea.KeySpace:
+		m.appendQuery(' ')
 	case tea.KeyEsc:
 		m.exitSearchMode(true)
 	}
+}
+
+// appendQuery adds runes to searchQuery and re-runs the match. A single
+// KeyMsg can carry more than one rune (bracketed paste, composed input),
+// so callers pass every rune from one message, not just the first.
+func (m *Model) appendQuery(runes ...rune) {
+	m.searchQuery += string(runes)
+	m.applySearchMatch()
+}
+
+// applySearchMatch re-jumps activeCursor to firstMatch(activeEntries,
+// searchQuery), always searching from the top of the list (spec §5). On no
+// match, activeCursor is left unchanged and searchNoMatch is set.
+func (m *Model) applySearchMatch() {
+	i := firstMatch(m.activeEntries, m.searchQuery)
+	if i < 0 {
+		m.searchNoMatch = true
+		return
+	}
+	m.activeCursor = i
+	m.searchNoMatch = false
+	m.clampScroll()
 }
