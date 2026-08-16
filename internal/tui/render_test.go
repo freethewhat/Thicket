@@ -453,3 +453,48 @@ func TestView_StatusLineShowsMarksListHints(t *testing.T) {
 		}
 	}
 }
+
+// TestView_MarksListClampsPaneHeightWhenMarksExceedVisibleRows covers the
+// case where the user has accumulated more marks than fit on screen:
+// lipgloss's Height() is a minimum, not a clamp, so without an explicit
+// MaxHeight the pane would grow past the available rows and push the
+// header off-screen (the same failure renderColumn's MaxHeight guards
+// against for the normal column layout).
+func TestView_MarksListClampsPaneHeightWhenMarksExceedVisibleRows(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.height = 12
+	m.width = 100
+	for r := 'a'; r <= 'o'; r++ { // 15 marks, comfortably more than visibleRows()
+		m.markTable[r] = "/" + string(r)
+	}
+	m.marksListMode = true
+	m.marksCursor = 0
+
+	out := m.View()
+
+	lines := strings.Split(out, "\n")
+	if len(lines) > m.height {
+		t.Fatalf("View() produced %d lines, want <= m.height (%d):\n%s", len(lines), m.height, out)
+	}
+	if lines[0] != truncate(m.activePath, m.width) {
+		t.Fatalf("expected header as first line, got %q", lines[0])
+	}
+}
+
+// TestView_StatusLineMarksListSurfacesStatusErr covers the deliberate
+// asymmetry with helpMode/searchMode: marksListMode's statusLine branch
+// leaves `right`/`isErr` at their default statusErr-or-activePath
+// precedence so that activateMarksListEntry can set statusErr and stay in
+// marksListMode with the error still visible.
+func TestView_StatusLineMarksListSurfacesStatusErr(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	m.marksListMode = true
+	m.statusErr = "some error"
+
+	if !strings.Contains(m.statusLine(), "some error") {
+		t.Fatalf("statusLine() missing statusErr while marksListMode: %q", m.statusLine())
+	}
+}

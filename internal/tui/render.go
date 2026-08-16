@@ -362,5 +362,5 @@ func (m Model) renderMarksList(rows int) string {
 		}
 		content = strings.Join(lines, "\n")
 	}
-	return activePaneStyle.Width(width).Height(rows).Render(content)
+	return activePaneStyle.Width(width).Height(rows).MaxHeight(rows).Render(content)
 }
