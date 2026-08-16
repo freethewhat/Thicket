@@ -21,10 +21,16 @@ var (
 // column is a single rendered pane: an ancestor, the active directory, or
 // the preview. highlightIdx is -1 when the pane has no highlighted row
 // (ancestors and previews don't carry their own cursor — see spec §5).
+// start is the index of the first visible row. The active column's start
+// tracks Model.activeScroll (its own persisted scroll state); ancestor and
+// preview columns carry no scroll state of their own, so their start is
+// derived from highlightIdx at build time (pinning the highlighted row
+// into view).
 type column struct {
 	entries      []fsutil.Entry
 	highlightIdx int
 	unreadable   bool
+	start        int
 }
 
 func (m Model) View() string {
@@ -32,7 +38,7 @@ func (m Model) View() string {
 		return ""
 	}
 	rows := m.visibleRows()
-	cols := m.buildColumns()
+	cols := m.buildColumns(rows)
 
 	colWidth := m.width / len(cols)
 	if colWidth < minColWidth {
@@ -49,19 +55,19 @@ func (m Model) View() string {
 	return header + "\n" + body + "\n" + m.statusLine()
 }
 
-func (m Model) buildColumns() []column {
+func (m Model) buildColumns(rows int) []column {
 	maxCols := m.width / minColWidth
 	if maxCols < 1 {
 		maxCols = 1
 	}
 
-	active := column{entries: m.activeEntries, highlightIdx: m.activeCursor}
+	active := column{entries: m.activeEntries, highlightIdx: m.activeCursor, start: m.activeScroll}
 	if maxCols < 2 {
 		return []column{active}
 	}
 
 	preview := m.buildPreview()
-	ancestors := m.buildAncestors(maxCols - 2)
+	ancestors := m.buildAncestors(maxCols-2, rows)
 
 	cols := make([]column, 0, len(ancestors)+2)
 	cols = append(cols, ancestors...)
@@ -69,7 +75,7 @@ func (m Model) buildColumns() []column {
 	return cols
 }
 
-func (m Model) buildAncestors(max int) []column {
+func (m Model) buildAncestors(max, rows int) []column {
 	if max <= 0 {
 		return nil
 	}
@@ -85,15 +91,26 @@ func (m Model) buildAncestors(max int) []column {
 			continue
 		}
 		idx := fsutil.IndexOfName(entries, child)
-		chain = append([]column{{entries: entries, highlightIdx: idx}}, chain...)
+		chain = append([]column{{entries: entries, highlightIdx: idx, start: scrollStartFor(idx, rows)}}, chain...)
 		path = parent
 	}
 	return chain
 }
 
+// scrollStartFor derives a start row that keeps highlightIdx visible within
+// rows rows, pinning it to the bottom once it would otherwise scroll off —
+// the behavior ancestor/preview columns use since they have no persisted
+// scroll state of their own.
+func scrollStartFor(highlightIdx, rows int) int {
+	if highlightIdx >= rows {
+		return highlightIdx - rows + 1
+	}
+	return 0
+}
+
 func (m Model) buildPreview() column {
 	if m.activeCursor < 0 || m.activeCursor >= len(m.activeEntries) {
-		return column{highlightIdx: -1}
+		return column{highlightIdx: -1, entries: []fsutil.Entry{{Name: "(empty)"}}}
 	}
 	entry := m.activeEntries[m.activeCursor]
 	if !entry.IsDir {
@@ -110,6 +127,9 @@ func (m Model) buildPreview() column {
 		more := fsutil.Entry{Name: fmt.Sprintf("… %d more", len(entries)-previewCap)}
 		entries = append(append([]fsutil.Entry{}, entries[:previewCap]...), more)
 	}
+	if len(entries) == 0 {
+		entries = []fsutil.Entry{{Name: "(empty)"}}
+	}
 	return column{entries: entries, highlightIdx: -1}
 }
 
@@ -118,6 +138,12 @@ func (m Model) buildFilePreviewColumn(entry fsutil.Entry) column {
 	preview, err := fsutil.ReadFilePreview(fullPath)
 	if err != nil {
 		return column{unreadable: true, highlightIdx: -1}
+	}
+	if preview.Special {
+		return column{
+			entries:      []fsutil.Entry{{Name: "<special file>"}},
+			highlightIdx: -1,
+		}
 	}
 	if preview.Binary {
 		return column{
@@ -136,14 +162,13 @@ func renderColumn(c column, width, rows int) string {
 	if c.unreadable {
 		return lipgloss.NewStyle().Width(width).Height(rows).Render("[permission denied]")
 	}
-	start := 0
-	if c.highlightIdx >= rows {
-		start = c.highlightIdx - rows + 1
-	}
 	var b strings.Builder
-	for i := start; i < start+rows; i++ {
-		if i >= len(c.entries) {
-			b.WriteString("\n")
+	for row := range rows {
+		if row > 0 {
+			b.WriteByte('\n')
+		}
+		i := c.start + row
+		if i < 0 || i >= len(c.entries) {
 			continue
 		}
 		e := c.entries[i]
@@ -162,17 +187,47 @@ func renderColumn(c column, width, rows int) string {
 			text = selectedStyle.Render(text)
 		}
 		b.WriteString(text)
-		b.WriteString("\n")
 	}
-	return lipgloss.NewStyle().Width(width).Render(b.String())
+	// MaxHeight/MaxWidth bound the rendered block even if a truncated
+	// double-width name still occupies more display cells than its rune
+	// count suggests, so one column can never grow the whole frame past
+	// height/width and push the header off-screen.
+	return lipgloss.NewStyle().Width(width).MaxWidth(width).MaxHeight(rows).Render(b.String())
 }
 
 func (m Model) statusLine() string {
-	if m.statusErr != "" {
-		return errStyle.Render(truncate(m.statusErr, m.width))
-	}
 	hints := "↑/k ↓/j move · →/l open · ←/h up · Enter cd+exit · . hidden · r refresh · q quit"
-	return truncate(hints, m.width)
+	right := m.activePath
+	isErr := m.statusErr != ""
+	if isErr {
+		right = m.statusErr
+	}
+	return composeStatusLine(hints, right, isErr, m.width)
+}
+
+// composeStatusLine lays hints on the left and statusErr-or-activePath on
+// the right within width cells (spec §6), truncating the right side first
+// when space is tight, and the left side too if that still doesn't fit.
+func composeStatusLine(left, right string, rightIsErr bool, width int) string {
+	if width <= 0 {
+		return ""
+	}
+	leftLen := len([]rune(left))
+	if leftLen >= width {
+		return truncate(left, width)
+	}
+	avail := width - leftLen - 1 // reserve one separating space
+	right = truncate(right, avail)
+	rightLen := len([]rune(right))
+	gap := width - leftLen - rightLen
+	if gap < 0 {
+		gap = 0
+	}
+	rendered := right
+	if rightIsErr {
+		rendered = errStyle.Render(right)
+	}
+	return left + strings.Repeat(" ", gap) + rendered
 }
 
 func truncate(s string, width int) string {
@@ -181,6 +236,9 @@ func truncate(s string, width int) string {
 		return s
 	}
 	if width <= 1 {
+		if width <= 0 {
+			return ""
+		}
 		return string(r[:width])
 	}
 	return string(r[:width-1]) + "…"

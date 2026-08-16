@@ -12,6 +12,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.clampScroll()
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -131,15 +132,33 @@ func (m *Model) handleLeft() {
 		m.statusErr = err.Error()
 		return
 	}
+
+	// The child-index lookup must not use the showHidden-filtered listing
+	// on its own: if activePath is itself a dotdirectory and hidden files
+	// are off, child is filtered out of entries entirely and the lookup
+	// would always miss. Resolve existence against an unfiltered listing
+	// of the parent while still displaying/storing the filtered one.
+	known := entries
+	if !m.showHidden {
+		if all, aerr := fsutil.ListDir(parent, true); aerr == nil {
+			known = all
+		}
+	}
+
 	m.activePath = parent
 	m.activeEntries = entries
-	idx := fsutil.IndexOfName(entries, child)
-	if len(entries) == 0 {
-		idx = -1
-	} else if idx < 0 {
-		idx = 0
+	switch {
+	case len(entries) == 0:
+		m.activeCursor = -1
+	case fsutil.IndexOfName(known, child) < 0:
+		// Absent even from the unfiltered listing: deleted externally.
+		m.activeCursor = 0
+	default:
+		// Present in the parent, but only highlightable when it also
+		// appears in the filtered display; a hidden dotdirectory just
+		// left with showHidden off has no visible row to highlight.
+		m.activeCursor = fsutil.IndexOfName(entries, child)
 	}
-	m.activeCursor = idx
 	m.activeScroll = 0
 	m.clampScroll()
 	m.statusErr = ""

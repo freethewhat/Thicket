@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -56,9 +57,13 @@ func TestView_ShowsAncestorColumnAfterDescending(t *testing.T) {
 	}
 }
 
+// TestView_PermissionDeniedColumnShowsMarker covers §6: the status line
+// composes hints (left) with statusErr (right) — the error needs enough
+// width alongside the hints to appear in full, unlike a bare status line.
 func TestView_PermissionDeniedColumnShowsMarker(t *testing.T) {
 	root := setupFixture(t)
 	m := newTestModel(t, root)
+	m.width = 130
 
 	m.statusErr = "open /x: permission denied"
 	out := m.View()
@@ -127,3 +132,69 @@ func restoreColorProfile(t *testing.T) {
 }
 
 func rightKey() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRight} }
+
+// TestView_ActiveColumnScrollTracksActiveScroll covers the regression
+// where renderColumn re-derived its own scroll window from highlightIdx
+// instead of Model.activeScroll, permanently pinning the cursor to the
+// bottom row and hiding everything below it once the cursor passed the
+// pane height.
+func TestView_ActiveColumnScrollTracksActiveScroll(t *testing.T) {
+	root := t.TempDir()
+	for i := range 30 {
+		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
+	}
+	m, err := New(root)
+	if err != nil {
+		t.Fatalf("New(%q): %v", root, err)
+	}
+	m.height = 10 // visibleRows() = 8 data rows
+	m.width = 20  // below the 30-column preview threshold: active-only
+
+	down := tea.KeyMsg{Type: tea.KeyDown}
+	up := tea.KeyMsg{Type: tea.KeyUp}
+
+	for range 12 {
+		updated, _ := m.Update(down)
+		m = updated.(Model)
+	}
+	if m.activeCursor != 12 || m.activeScroll != 5 {
+		t.Fatalf("after 12 downs: cursor=%d scroll=%d, want cursor=12 scroll=5", m.activeCursor, m.activeScroll)
+	}
+	out := m.View()
+	for i := 5; i <= 12; i++ {
+		name := fmt.Sprintf("n%02d", i)
+		if !strings.Contains(out, name) {
+			t.Fatalf("expected %q visible in window 5-12:\n%s", name, out)
+		}
+	}
+	for _, i := range []int{0, 4, 13, 29} {
+		name := fmt.Sprintf("n%02d", i)
+		if strings.Contains(out, name) {
+			t.Fatalf("did not expect %q visible in window 5-12:\n%s", name, out)
+		}
+	}
+
+	// Move back up without leaving the current window: the window must
+	// stay put (not stay pinned so the cursor is always the bottom row),
+	// then keep moving up until it must shift back up.
+	for range 9 {
+		updated, _ := m.Update(up)
+		m = updated.(Model)
+	}
+	if m.activeCursor != 3 || m.activeScroll != 3 {
+		t.Fatalf("after 9 ups: cursor=%d scroll=%d, want cursor=3 scroll=3 (window must shift back up)", m.activeCursor, m.activeScroll)
+	}
+	out = m.View()
+	for i := 3; i <= 10; i++ {
+		name := fmt.Sprintf("n%02d", i)
+		if !strings.Contains(out, name) {
+			t.Fatalf("expected %q visible in window 3-10 after scrolling up:\n%s", name, out)
+		}
+	}
+	for _, i := range []int{0, 2, 11, 29} {
+		name := fmt.Sprintf("n%02d", i)
+		if strings.Contains(out, name) {
+			t.Fatalf("did not expect %q visible in window 3-10 after scrolling up:\n%s", name, out)
+		}
+	}
+}

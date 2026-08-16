@@ -33,11 +33,11 @@ Run `th` (or `th /some/path` to start elsewhere). Keys:
 |---|---|
 | `↑`, `k` | Move selection up |
 | `↓`, `j` | Move selection down |
-| `→`, `l` | Open selected directory, move focus right |
-| `←`, `h` | Go up one directory, move focus left |
-| `Enter` | cd to the selection and exit |
+| `→`, `l` | Open selected directory, move focus right (no-op on files) |
+| `←`, `h` | Go up one directory, move focus left (no-op at `/`) |
+| `Enter` | Choose: cd to the selected directory, or to the active directory if a file/empty directory is selected; exit |
 | `q`, `Esc`, `Ctrl-C` | Quit without changing directory |
-| `.` | Toggle hidden (dotfile) visibility |
+| `.` | Toggle hidden (dotfile) visibility (default off) |
 | `r` | Refresh the active directory's listing |
 
 Navigation only in v1 — no file create/rename/delete/copy/move, no search,

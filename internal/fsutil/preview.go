@@ -9,14 +9,20 @@ import (
 
 const (
 	previewReadLimit = 64 * 1024
-	binarySniffLen  = 8000
+	binarySniffLen   = 8000
 )
 
 // FilePreview is the content shown in the preview pane for a regular file.
+// Special is set for paths that exist but are not a regular file (e.g. a
+// FIFO, device, or socket) — these are reported without ever calling
+// os.Open, since opening a FIFO with no writer blocks indefinitely and
+// would freeze the whole TUI (View runs inline on the Bubble Tea event
+// loop).
 type FilePreview struct {
-	Binary bool
-	Lines  []string
-	Size   int64
+	Binary  bool
+	Special bool
+	Lines   []string
+	Size    int64
 }
 
 // ReadFilePreview reads up to previewReadLimit bytes from path and detects
@@ -25,6 +31,9 @@ func ReadFilePreview(path string) (FilePreview, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return FilePreview{}, err
+	}
+	if !info.Mode().IsRegular() {
+		return FilePreview{Special: true, Size: info.Size()}, nil
 	}
 	f, err := os.Open(path)
 	if err != nil {
