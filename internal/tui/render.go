@@ -362,5 +362,6 @@ func (m Model) renderMarksList(rows int) string {
 		}
 		content = strings.Join(lines, "\n")
 	}
-	return activePaneStyle.Width(width).Height(rows).MaxHeight(rows).Render(content)
+	inner := lipgloss.NewStyle().Width(width).Height(rows).MaxHeight(rows).Render(content)
+	return activePaneStyle.Render(inner)
 }

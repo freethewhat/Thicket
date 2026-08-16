@@ -454,13 +454,16 @@ func TestView_StatusLineShowsMarksListHints(t *testing.T) {
 	}
 }
 
-// TestView_MarksListClampsPaneHeightWhenMarksExceedVisibleRows covers the
-// case where the user has accumulated more marks than fit on screen:
-// lipgloss's Height() is a minimum, not a clamp, so without an explicit
-// MaxHeight the pane would grow past the available rows and push the
-// header off-screen (the same failure renderColumn's MaxHeight guards
-// against for the normal column layout).
-func TestView_MarksListClampsPaneHeightWhenMarksExceedVisibleRows(t *testing.T) {
+// TestView_MarksListManyMarksFillPaneToExactVisibleHeightWithBorderIntact
+// covers the case where the user has accumulated more marks than fit on
+// screen: lipgloss's Height() is a minimum, not a clamp, so without an
+// explicit MaxHeight the pane would grow past the available rows and push
+// the header off-screen (the same failure renderColumn's MaxHeight guards
+// against for the normal column layout). Applying MaxHeight to the
+// *bordered* style rather than a borderless inner block truncates the
+// border itself away on every render, so this asserts the exact total
+// line count (not just an upper bound) and that the bottom border survives.
+func TestView_MarksListManyMarksFillPaneToExactVisibleHeightWithBorderIntact(t *testing.T) {
 	root := setupFixture(t)
 	m := newTestModel(t, root)
 	m.height = 12
@@ -474,11 +477,41 @@ func TestView_MarksListClampsPaneHeightWhenMarksExceedVisibleRows(t *testing.T) 
 	out := m.View()
 
 	lines := strings.Split(out, "\n")
-	if len(lines) > m.height {
-		t.Fatalf("View() produced %d lines, want <= m.height (%d):\n%s", len(lines), m.height, out)
+	if len(lines) != m.height {
+		t.Fatalf("View() produced %d lines, want exactly m.height (%d):\n%s", len(lines), m.height, out)
 	}
 	if lines[0] != truncate(m.activePath, m.width) {
 		t.Fatalf("expected header as first line, got %q", lines[0])
+	}
+	borderLine := lines[len(lines)-2] // pane's bottom border, just above the status line
+	if !strings.Contains(borderLine, lipgloss.ThickBorder().BottomLeft) {
+		t.Fatalf("expected bottom border on pane's last line, got %q\nfull output:\n%s", borderLine, out)
+	}
+}
+
+// TestView_MarksListFewMarksStillFillsFullHeightBorderedBox covers the
+// opposite edge: with fewer marks than visibleRows(), the pane must still
+// pad out to the full box height (not shrink to just the content) and
+// keep its border, since Height(rows) with no MaxHeight interference is
+// the floor that guarantees this.
+func TestView_MarksListFewMarksStillFillsFullHeightBorderedBox(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.height = 16
+	m.width = 100
+	m.markTable['a'] = "/only"
+	m.marksListMode = true
+	m.marksCursor = 0
+
+	out := m.View()
+
+	lines := strings.Split(out, "\n")
+	if len(lines) != m.height {
+		t.Fatalf("View() produced %d lines, want exactly m.height (%d):\n%s", len(lines), m.height, out)
+	}
+	borderLine := lines[len(lines)-2] // pane's bottom border, just above the status line
+	if !strings.Contains(borderLine, lipgloss.ThickBorder().BottomLeft) {
+		t.Fatalf("expected bottom border on pane's last line, got %q\nfull output:\n%s", borderLine, out)
 	}
 }
 
