@@ -206,26 +206,29 @@ func (m Model) statusLine() string {
 }
 
 // composeStatusLine lays hints on the left and statusErr-or-activePath on
-// the right within width cells (spec §6), truncating the right side first
-// when space is tight, and the left side too if that still doesn't fit.
+// the right within width cells (spec §6). The right side is the
+// higher-priority information — it's the only way navigation errors reach
+// the user — so it always gets first claim on available space; the left
+// hints are truncated (down to nothing if necessary) to make room.
 func composeStatusLine(left, right string, rightIsErr bool, width int) string {
 	if width <= 0 {
 		return ""
 	}
-	leftLen := len([]rune(left))
-	if leftLen >= width {
-		return truncate(left, width)
-	}
-	avail := width - leftLen - 1 // reserve one separating space
-	right = truncate(right, avail)
+	right = truncate(right, width)
 	rightLen := len([]rune(right))
-	gap := width - leftLen - rightLen
-	if gap < 0 {
-		gap = 0
-	}
 	rendered := right
 	if rightIsErr {
 		rendered = errStyle.Render(right)
+	}
+	avail := width - rightLen - 1 // reserve one separating space
+	if avail < 0 {
+		avail = 0
+	}
+	left = truncate(left, avail)
+	leftLen := len([]rune(left))
+	gap := width - leftLen - rightLen
+	if gap < 0 {
+		gap = 0
 	}
 	return left + strings.Repeat(" ", gap) + rendered
 }

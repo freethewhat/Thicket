@@ -72,6 +72,39 @@ func TestView_PermissionDeniedColumnShowsMarker(t *testing.T) {
 	}
 }
 
+// TestView_StatusLineAt80ColumnsStillShowsError is a regression test: the
+// key-hint string is exactly 80 runes wide, so at the common 80-column
+// terminal width the hints alone used to consume the entire status line,
+// silently dropping statusErr (spec §6 says the right side — statusErr or
+// activePath — is the higher-priority information and must never be
+// suppressed by the left-side hints).
+func TestView_StatusLineAt80ColumnsStillShowsError(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 80
+
+	m.statusErr = "open /x: permission denied"
+	out := m.View()
+	if !strings.Contains(out, "permission denied") {
+		t.Fatalf("expected statusErr surfaced at width 80:\n%s", out)
+	}
+}
+
+// TestView_StatusLineNarrowWidthStillShowsError checks the same priority
+// holds at an even tighter width, where the hints must be truncated away
+// entirely (not just shortened) to make room for the error.
+func TestView_StatusLineNarrowWidthStillShowsError(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 40
+
+	m.statusErr = "open /x: permission denied"
+	out := m.View()
+	if !strings.Contains(out, "permission denied") {
+		t.Fatalf("expected statusErr surfaced at width 40:\n%s", out)
+	}
+}
+
 func TestView_NarrowTerminalShowsActiveColumnOnly(t *testing.T) {
 	root := setupFixture(t)
 	m := newTestModel(t, root)
