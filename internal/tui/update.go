@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"thicket/internal/fsutil"
+	marksPkg "thicket/internal/marks"
 )
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -27,8 +28,20 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+		if m.marksListMode {
+			m.handleMarksListKey(msg)
+			return m, nil
+		}
 		if m.searchMode {
 			m.handleSearchKey(msg)
+			return m, nil
+		}
+		if m.markSetPending {
+			m.handleMarkSetKey(msg)
+			return m, nil
+		}
+		if m.markJumpPending {
+			m.handleMarkJumpKey(msg)
 			return m, nil
 		}
 		switch msg.String() {
@@ -64,6 +77,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.enterSearchMode()
 		case "?":
 			m.helpMode = true
+		case "m":
+			m.markSetPending = true
+		case "`":
+			m.markJumpPending = true
+		case "'":
+			m.enterMarksListMode()
 		}
 	}
 	return m, nil
@@ -275,4 +294,155 @@ func (m *Model) applySearchMatch() {
 	m.activeCursor = i
 	m.searchNoMatch = false
 	m.clampScroll()
+}
+
+// enterMarksListMode opens the full-screen marks list (spec §5, ').
+// marksCursor is recomputed every time the list opens, mirroring the
+// -1-when-empty convention activeCursor already uses.
+func (m *Model) enterMarksListMode() {
+	m.marksListMode = true
+	m.marksCursor = marksListCursorFor(m.markTable)
+}
+
+// singleLetterRune reports whether msg carries exactly one ASCII letter
+// rune (a-z or A-Z) via tea.KeyRunes — the shape a single mark-letter
+// keystroke takes. Discriminating on msg.Type, not msg.String(), mirrors
+// handleSearchKey's convention (see Global Constraints): String() returns
+// a name for every recognized key ("tab", "pgdown", ...), which a
+// string-based check could mistake for a letter-shaped case.
+func singleLetterRune(msg tea.KeyMsg) (rune, bool) {
+	if msg.Type != tea.KeyRunes || len(msg.Runes) != 1 {
+		return 0, false
+	}
+	r := msg.Runes[0]
+	if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') {
+		return 0, false
+	}
+	return r, true
+}
+
+// handleMarkSetKey processes one key while markSetPending is true (spec
+// §5's mark-set table). Any key that isn't a single a-z/A-Z rune cancels
+// without mutation.
+func (m *Model) handleMarkSetKey(msg tea.KeyMsg) {
+	m.markSetPending = false
+	r, ok := singleLetterRune(msg)
+	if !ok {
+		return
+	}
+	m.markTable[r] = m.activePath
+	if err := marksPkg.Save(m.marksPath, m.markTable); err != nil {
+		m.statusErr = err.Error()
+	}
+}
+
+// handleMarkJumpKey processes one key while markJumpPending is true (spec
+// §5's mark-jump table).
+func (m *Model) handleMarkJumpKey(msg tea.KeyMsg) {
+	m.markJumpPending = false
+	r, ok := singleLetterRune(msg)
+	if !ok {
+		return
+	}
+	target, known := m.markTable[r]
+	if !known {
+		m.statusErr = "no mark: " + string(r)
+		return
+	}
+	m.jumpToMark(r, target)
+}
+
+// jumpToMark navigates to target (the directory marked by r) on success,
+// or sets statusErr (prefixed with the mark letter, same shape as
+// handleRight's permission-denied handling) and leaves activePath
+// untouched on failure. Reports whether the jump succeeded so callers can
+// decide whether to close their own mode — markJumpPending always clears
+// regardless, but the marks list (spec §5) only closes on success.
+func (m *Model) jumpToMark(r rune, target string) bool {
+	entries, err := fsutil.ListDir(target, m.showHidden)
+	if err != nil {
+		m.statusErr = "mark " + string(r) + ": " + err.Error()
+		return false
+	}
+	m.activePath = target
+	m.activeEntries = entries
+	m.activeCursor = 0
+	if len(entries) == 0 {
+		m.activeCursor = -1
+	}
+	m.activeScroll = 0
+	m.statusErr = ""
+	return true
+}
+
+// handleMarksListKey processes one key while marksListMode is true (spec
+// §5's marks-list table). Any msg.String() not matched below is an
+// explicit no-op — Go's switch already does nothing when no case matches.
+func (m *Model) handleMarksListKey(msg tea.KeyMsg) {
+	switch msg.String() {
+	case "up", "k":
+		m.moveMarksCursor(-1)
+	case "down", "j":
+		m.moveMarksCursor(1)
+	case "enter":
+		m.activateMarksListEntry()
+	case "d":
+		m.deleteMarksListEntry()
+	case "q", "esc":
+		m.marksListMode = false
+	}
+}
+
+func (m *Model) moveMarksCursor(delta int) {
+	n := len(sortedMarkLetters(m.markTable))
+	if n == 0 {
+		return
+	}
+	m.marksCursor += delta
+	if m.marksCursor < 0 {
+		m.marksCursor = 0
+	}
+	if last := n - 1; m.marksCursor > last {
+		m.marksCursor = last
+	}
+}
+
+func (m *Model) activateMarksListEntry() {
+	letters := sortedMarkLetters(m.markTable)
+	if m.marksCursor < 0 || m.marksCursor >= len(letters) {
+		return
+	}
+	r := letters[m.marksCursor]
+	if m.jumpToMark(r, m.markTable[r]) {
+		m.marksListMode = false
+	}
+}
+
+// deleteMarksListEntry deletes the highlighted mark and persists the
+// change. On a Save error, the deletion stays in memory (matching the
+// disk/memory-diverges tradeoff handleMarkSetKey already accepts) and
+// marksCursor is left untouched so the error is visible against the row
+// that's still selected. On success, marksCursor is clamped the same way
+// reload() clamps activeCursor elsewhere in this file: preserved if it's
+// still a valid index into the shrunk table, reset to 0 only if the
+// deleted row was its last valid position (see Global Constraints'
+// ruling — this is deliberately not a call to marksListCursorFor, which
+// has no way to preserve a previous position).
+func (m *Model) deleteMarksListEntry() {
+	letters := sortedMarkLetters(m.markTable)
+	if m.marksCursor < 0 || m.marksCursor >= len(letters) {
+		return
+	}
+	r := letters[m.marksCursor]
+	delete(m.markTable, r)
+	if err := marksPkg.Save(m.marksPath, m.markTable); err != nil {
+		m.statusErr = err.Error()
+		return
+	}
+	m.statusErr = ""
+	if len(m.markTable) == 0 {
+		m.marksCursor = -1
+	} else if m.marksCursor >= len(m.markTable) {
+		m.marksCursor = 0
+	}
 }
