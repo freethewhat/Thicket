@@ -218,6 +218,16 @@ func (m *Model) handleSearchKey(msg tea.KeyMsg) {
 		m.appendQuery(msg.Runes...)
 	case tea.KeySpace:
 		m.appendQuery(' ')
+	case tea.KeyBackspace:
+		if m.searchQuery == "" {
+			m.exitSearchMode(true)
+			return
+		}
+		runes := []rune(m.searchQuery)
+		m.searchQuery = string(runes[:len(runes)-1])
+		m.applySearchMatch()
+	case tea.KeyEnter:
+		m.exitSearchMode(false)
 	case tea.KeyEsc:
 		m.exitSearchMode(true)
 	}

@@ -478,3 +478,120 @@ func TestUpdate_SearchEscRestoresPreSearchCursor(t *testing.T) {
 		t.Fatalf("activeCursor = %d, want restored %d", m.activeCursor, prevCursor)
 	}
 }
+
+func TestUpdate_SearchBackspaceShrinksQueryAndRejumps(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("fix")}) // no match
+	m = updated.(Model)
+	if !m.searchNoMatch {
+		t.Fatal("precondition: expected no match for \"fix\"")
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m = updated.(Model)
+
+	if m.searchQuery != "fi" {
+		t.Fatalf("searchQuery = %q, want %q", m.searchQuery, "fi")
+	}
+	want := fsutil.IndexOfName(m.activeEntries, "file.txt")
+	if m.activeCursor != want {
+		t.Fatalf("activeCursor = %d, want %d (file.txt) after backspacing to \"fi\"", m.activeCursor, want)
+	}
+	if m.searchNoMatch {
+		t.Fatal("expected searchNoMatch == false after backspacing to a matching query")
+	}
+}
+
+func TestUpdate_SearchBackspaceOnEmptyQueryExitsAndRestoresCursor(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	prevCursor := m.activeCursor
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	if m.activeCursor == prevCursor {
+		t.Fatal("precondition: expected cursor to move off its pre-search position")
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace}) // "f" -> ""
+	m = updated.(Model)
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyBackspace}) // "" -> exit, restore
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("backspacing past an empty query must not quit the program")
+	}
+	if m.searchMode {
+		t.Fatal("expected searchMode == false after backspacing past an empty query")
+	}
+	if m.activeCursor != prevCursor {
+		t.Fatalf("activeCursor = %d, want restored %d", m.activeCursor, prevCursor)
+	}
+}
+
+func TestUpdate_SearchEnterCommitsAndKeepsCursor(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	matchedCursor := m.activeCursor
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("Enter committing a search must not quit the program")
+	}
+	if m.searchMode {
+		t.Fatal("expected searchMode == false after Enter")
+	}
+	if m.activeCursor != matchedCursor {
+		t.Fatalf("activeCursor = %d, want unchanged %d", m.activeCursor, matchedCursor)
+	}
+
+	// A second, separate Enter now performs the ordinary select/cd action
+	// (file.txt is a file, so chosenPath falls back to the active directory).
+	updated, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+	if cmd == nil {
+		t.Fatal("expected the second Enter (normal mode) to quit the program")
+	}
+	path, ok := m.Result()
+	if !ok {
+		t.Fatal("expected selected == true after the normal-mode Enter")
+	}
+	if path != root {
+		t.Fatalf("chosenPath = %q, want %q", path, root)
+	}
+}
+
+func TestUpdate_SearchImmediateEnterIsNoop(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	prevCursor := m.activeCursor
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("immediate Enter after / must not quit the program")
+	}
+	if m.searchMode {
+		t.Fatal("expected searchMode == false after Enter")
+	}
+	if m.activeCursor != prevCursor {
+		t.Fatalf("activeCursor = %d, want unchanged %d", m.activeCursor, prevCursor)
+	}
+}
