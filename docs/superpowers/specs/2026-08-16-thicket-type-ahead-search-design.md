@@ -53,41 +53,54 @@ built by `New()` — no change to `New()`'s behavior or signature.
 
 ## 4. Key handling
 
-`Update()` gains a mode branch checked before the existing key switch:
+`Update()` gains a mode branch, in `internal/tui/update.go` (mutating
+search logic lives alongside the existing `handleLeft`/`handleRight`/
+`handleEnter` helpers there; `internal/tui/search.go`, per §5, holds only
+the pure `firstMatch` function — no state mutation):
 
-- `Ctrl-C` always hard-quits (`selected = false`, `quitting = true`,
-  `tea.Quit`), in every mode. It's a control code, never query text, so this
-  doesn't collide with typing.
+- `Ctrl-C` (`msg.String() == "ctrl+c"`) always hard-quits (`selected =
+  false`, `quitting = true`, `tea.Quit`), in every mode. It's a control
+  code, never query text, so this doesn't collide with typing.
 - If `m.searchMode` is true, **every other key** is handled by the search
-  branch below and never reaches the normal-mode handlers (`h/j/k/l`,
-  arrows, `.`, `r`, `Enter`, `Esc`, `q` all mean something different, or
-  nothing, while composing a query — see table).
-- If `m.searchMode` is false, `/` is a new normal-mode key; all existing
-  normal-mode keys are unchanged.
+  branch below and never reaches the normal-mode handlers.
+- If `m.searchMode` is false, `/` (`msg.String() == "/"`) is a new
+  normal-mode key; all existing normal-mode keys are unchanged.
 
 ### Normal mode → search mode
 
 `/`: if `activeCursor >= 0` there are entries to search (if the directory is
-empty, `/` still opens the prompt — see §6 edge cases). Sets
+empty, `/` still opens the prompt — see §7 edge cases). Sets
 `searchMode = true`, `searchQuery = ""`, `searchNoMatch = false`,
 `searchPrevCursor = activeCursor`.
 
-### While `searchMode` is true
+### Classifying keys while `searchMode` is true
 
-| Key | Effect |
+The existing codebase switches on `msg.String()` (e.g.
+`case "q", "esc", "ctrl+c":`), which works for normal mode because every
+normal-mode key is a distinct, known string. Search mode **must not** use
+that pattern for "append to query": `msg.String()` returns a multi-character
+name for every key bubbletea recognizes, including keys that must never
+become query text — e.g. `"tab"`, `"pgdown"`, `"f1"`. A `default:` branch on
+`msg.String()` that appended the string would silently inject the literal
+text `"tab"` into the query on a stray Tab press. The discriminator is
+**`msg.Type`**, not `msg.String()`:
+
+| `msg.Type` | Effect |
 |---|---|
-| Printable rune | Append to `searchQuery`. Recompute `firstMatch(activeEntries, searchQuery)` (§5). Match found at index `i`: `activeCursor = i`, reclamp `activeScroll` (reuse `clampScroll()`), `searchNoMatch = false`. No match: `activeCursor` unchanged (stays at the last successful match, or at `searchPrevCursor` if there has never been one this session), `searchNoMatch = true`. |
-| Backspace, `searchQuery != ""` | Pop the last rune off `searchQuery`; recompute the match against the shorter query the same way. |
-| Backspace, `searchQuery == ""` | Same as Esc (below). |
-| Enter | Exit search mode: `searchMode = false`, `searchQuery = ""`, `searchNoMatch = false`. `activeCursor` is left exactly where the search left it (does **not** restore `searchPrevCursor`). A subsequent, separate Enter (now in normal mode) performs the ordinary select/cd action per the base spec. |
-| Esc | Exit search mode the same way as Enter, except `activeCursor = searchPrevCursor` (reclamp `activeScroll`) — restores the pre-search position. |
-| `↑` `↓` `→` `←` (dedicated arrow keys; NOT `hjkl`, which are query text) | No-op / swallowed. |
-| `tea.WindowSizeMsg` | Processed exactly as in normal mode — resize always works. |
+| `tea.KeyRunes` | Append **every** rune in `msg.Runes` (not just the first) to `searchQuery` — a single `KeyMsg` can carry more than one rune (bracketed paste, composed input). Then recompute `firstMatch(activeEntries, searchQuery)` (§5): match at index `i` → `activeCursor = i`, reclamp `activeScroll` (reuse `clampScroll()`), `searchNoMatch = false`; no match → `activeCursor` unchanged (last successful match, or `searchPrevCursor` if none yet), `searchNoMatch = true`. |
+| `tea.KeySpace` | bubbletea reports the space bar as this distinct type, not `KeyRunes` (`Key.String() == " "`, confirmed in `key.go`) — treat identically to `tea.KeyRunes` with `Runes = []rune{' '}`. Required for filenames containing spaces (e.g. `"My Documents"`) to be searchable at all. |
+| `tea.KeyBackspace`, `searchQuery != ""` | Pop the last rune off `searchQuery`; recompute the match against the shorter query the same way. |
+| `tea.KeyBackspace`, `searchQuery == ""` | Same as `tea.KeyEsc` (below). |
+| `tea.KeyEnter` | Exit search mode: `searchMode = false`, `searchQuery = ""`, `searchNoMatch = false`. `activeCursor` is left exactly where the search left it (does **not** restore `searchPrevCursor`). A subsequent, separate Enter (now in normal mode) performs the ordinary select/cd action per the base spec. |
+| `tea.KeyEsc` | Exit search mode the same way as Enter, except `activeCursor = searchPrevCursor` (reclamp `activeScroll`) — restores the pre-search position. |
+| `tea.KeyUp`, `tea.KeyDown`, `tea.KeyLeft`, `tea.KeyRight` (dedicated arrow keys; NOT `hjkl`, which arrive as `tea.KeyRunes` and are query text) | No-op / swallowed. |
+| Anything else (`tea.KeyTab`, `tea.KeyCtrlU`, `tea.KeyHome`, `tea.KeyPgUp`, `tea.KeyF1`, …) | No-op / swallowed — explicit catch-all, not left implicit. Readline-style query editing (Ctrl-U to clear, moving a cursor within the query, etc.) is out of scope; Backspace is the only edit operation. |
+| `tea.WindowSizeMsg` | Processed exactly as in normal mode — resize always works, in every mode. |
 
-Note `q`, `h`, `j`, `k`, `l`, `.`, `r` are all ordinary printable runes and
-therefore query text while `searchMode` is true — none of them can be
-invoked mid-search. Exiting search mode (Enter or Esc, one keystroke) always
-returns access to them.
+Note `q`, `h`, `j`, `k`, `l`, `.`, `r` all arrive as `tea.KeyRunes` and are
+therefore query text while `searchMode` is true — none of them can invoke a
+command mid-search. Exiting search mode (Enter or Esc, one keystroke)
+always restores access to them.
 
 ## 5. Matching logic
 
@@ -115,12 +128,24 @@ right side) — extend, no new style constants:
 
 - **Left side**, while `searchMode`: the live query prompt, e.g. `/report`,
   replacing the normal key-hint string. Add `· / search` to the normal-mode
-  hint string so the feature is discoverable.
-- **Right side**, while `searchMode && searchNoMatch`: `no match`, reusing
-  the existing error-style slot/appearance that `statusErr` currently
-  occupies (search's no-match state is display-only and never sets the real
-  `statusErr` field, which is reserved for filesystem errors and is cleared
-  by `reload()`).
+  hint string so the feature is discoverable. The prompt is subject to the
+  same `composeStatusLine`/`truncate` width-fitting as the normal-mode
+  hints — display-only truncation on very narrow terminals; the underlying
+  `searchQuery` field itself is never truncated, only its rendering.
+- **Right side, precedence while `searchMode` is true**: the slot is
+  dedicated to search state — `no match` when `searchNoMatch`, otherwise
+  the unchanged `activePath` — for the entire search session, reusing the
+  existing error-style appearance for the `no match` case. A stale
+  `statusErr` from before `/` was pressed (nothing clears it mid-search,
+  since `r`/`.`/`Left`/`Right` are all unreachable while typing) is **not**
+  displayed during this time; the `statusErr` field itself is untouched and
+  reappears once search exits, if still set and not since cleared by a
+  `reload()`.
+- The preview pane already re-derives from `activeCursor` on every `View()`
+  call (base spec §5); it therefore follows the cursor live as the user
+  types, with no additional code required — called out explicitly here so
+  it reads as an intended consequence of the existing derived-render
+  architecture, not accidental scope creep.
 - No other rendering changes: `buildColumns`, `buildAncestors`,
   `buildPreview`, `renderColumn` are untouched. Search only ever moves
   `activeCursor`/`activeScroll`, which those functions already consume;
@@ -144,6 +169,13 @@ right side) — extend, no new style constants:
 - `.` (toggle hidden) and `r` (refresh) are unreachable mid-search for the
   same reason — by design, not an oversight; exiting search (Enter/Esc) is
   one keystroke away.
+- Pressing `/` and immediately Enter or Esc, before typing anything
+  (`searchQuery == ""`): both are well-defined no-ops — `activeCursor` was
+  never moved from `searchPrevCursor`, so the prompt simply closes with the
+  cursor unchanged.
+- Keys outside §4's table (Tab, Ctrl-U, Home, PageUp, F-keys, …) are
+  explicit no-ops per that table's catch-all row — not undefined behavior,
+  and specifically not appended to the query as their `msg.String()` name.
 
 ## 8. Testing strategy
 
@@ -163,8 +195,13 @@ the standalone `firstMatch` function — go into the existing
 - `TestUpdate_SearchBackspaceOnEmptyQueryExitsAndRestoresCursor`
 - `TestUpdate_SearchEscRestoresPreSearchCursor`
 - `TestUpdate_SearchEnterCommitsAndKeepsCursor`
+- `TestUpdate_SearchImmediateEnterIsNoop`
+- `TestUpdate_SearchImmediateEscIsNoop`
 - `TestUpdate_SearchLettersLikeQAndHDoNotTriggerNavCommands`
+- `TestUpdate_SearchSpaceKeyAppendsLiteralSpace`
+- `TestUpdate_SearchMultiRuneKeyMsgAppendsAllRunes`
 - `TestUpdate_SearchArrowKeysAreNoOps`
+- `TestUpdate_SearchTabAndOtherControlKeysAreNoOps`
 - `TestUpdate_CtrlCQuitsEvenDuringSearch`
 - `TestUpdate_SlashOnEmptyDirectorySetsNoMatchImmediately`
 - `TestFirstMatch_EmptyQueryReturnsNegativeOne`
@@ -175,6 +212,7 @@ the standalone `firstMatch` function — go into the existing
 `internal/tui/render_test.go` additions:
 - `TestView_StatusLineShowsSearchPromptWhileTyping`
 - `TestView_StatusLineShowsNoMatchIndicator`
+- `TestView_StatusLineSearchSuppressesStaleStatusErr`
 
 Manual smoke test (added to the existing manual-smoke-test list, since it's
 part of the same `/dev/tty` interactive path already called out as
