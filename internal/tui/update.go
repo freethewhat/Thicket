@@ -333,7 +333,9 @@ func (m *Model) handleMarkSetKey(msg tea.KeyMsg) {
 	m.markTable[r] = m.activePath
 	if err := marksPkg.Save(m.marksPath, m.markTable); err != nil {
 		m.statusErr = err.Error()
+		return
 	}
+	m.statusErr = ""
 }
 
 // handleMarkJumpKey processes one key while markJumpPending is true (spec
@@ -394,7 +396,7 @@ func (m *Model) handleMarksListKey(msg tea.KeyMsg) {
 }
 
 func (m *Model) moveMarksCursor(delta int) {
-	n := len(sortedMarkLetters(m.markTable))
+	n := len(m.markTable)
 	if n == 0 {
 		return
 	}

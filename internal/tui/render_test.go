@@ -380,6 +380,7 @@ func TestView_HelpModeShowsKeybindingsAndHidesColumns(t *testing.T) {
 func TestView_HelpScreenKeyColumnFitsWidestRow(t *testing.T) {
 	root := setupFixture(t)
 	m := newTestModel(t, root)
+	m.height = 24 // tall enough that visibleRows() >= len(Keybindings)+2, so no row is clipped
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	m = updated.(Model)
@@ -549,5 +550,25 @@ func TestView_StatusLineMarksListSurfacesStatusErr(t *testing.T) {
 
 	if !strings.Contains(m.statusLine(), "some error") {
 		t.Fatalf("statusLine() missing statusErr while marksListMode: %q", m.statusLine())
+	}
+}
+
+// TestView_HelpScreenStaysWithinPaneHeight covers the same overflow bug
+// renderMarksList's MaxHeight regression tests guard against: lipgloss's
+// Height() is a floor, not a clamp, so without an explicit MaxHeight the
+// help pane would grow past the available rows once Keybindings no longer
+// fits within m.visibleRows(), pushing the header off-screen.
+func TestView_HelpScreenStaysWithinPaneHeight(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.height = 12 // visibleRows() (8) < len(Keybindings)+2 (18)
+	m.width = 100
+	m.helpMode = true
+
+	out := m.View()
+
+	lines := strings.Split(out, "\n")
+	if len(lines) != m.height {
+		t.Fatalf("View() produced %d lines, want exactly m.height (%d):\n%s", len(lines), m.height, out)
 	}
 }

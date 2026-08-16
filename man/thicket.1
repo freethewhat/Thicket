@@ -84,7 +84,7 @@ or
 to close it.
 .TP
 .B m
-Bookmark the active directory under a letter (
+Bookmark the active directory under a letter (\c
 .BR a - z ,
 .BR A - Z ).
 .TP
@@ -92,7 +92,7 @@ Bookmark the active directory under a letter (
 Jump straight to a bookmarked directory by letter.
 .TP
 .B '
-Open the full-screen marks list: 
+Open the full-screen marks list:
 .BR Up / k
 and
 .BR Down / j
@@ -103,6 +103,18 @@ jumps to the highlighted mark,
 deletes it,
 .BR q / Esc
 closes the list.
+.SH FILES
+.TP
+.I $XDG_STATE_HOME/thicket/marks
+Persistent directory-marks table, falling back to
+.I $HOME/.local/state/thicket/marks
+if
+.I $XDG_STATE_HOME
+is unset. Each line holds one mark: a single letter, a tab character,
+then the absolute directory path it points to.
+If the file exists but cannot be read, thicket exits with status 2 (see
+.B EXIT STATUS
+below).
 .SH EXIT STATUS
 .TP
 .B 0

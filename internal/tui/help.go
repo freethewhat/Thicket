@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // KeyBinding is one row of the keybinding table: the key(s) that trigger an
@@ -58,5 +60,6 @@ func (m Model) renderHelp(rows int) string {
 	if width < 0 {
 		width = 0
 	}
-	return activePaneStyle.Width(width).Height(rows).Render(content)
+	inner := lipgloss.NewStyle().Width(width).Height(rows).MaxHeight(rows).Render(content)
+	return activePaneStyle.Render(inner)
 }

@@ -19,7 +19,9 @@ Every other v1 non-goal in §3 still holds.
 
 ## Architecture & Data Flow
 
-Three-layer module, strict dependency direction `cmd/thicket → internal/tui → {internal/fsutil, internal/marks}`:
+Three-layer module; `cmd/thicket` depends on `internal/tui` and directly on
+`internal/marks` (for `marks.DefaultPath()`), while `internal/tui` depends
+on `internal/fsutil` and `internal/marks`:
 
 1. **`internal/fsutil`** — pure filesystem I/O. `ListDir(dir, showHidden) ([]Entry, error)`
    reads a directory, classifies each entry (symlink resolution via
@@ -69,12 +71,16 @@ Three-layer module, strict dependency direction `cmd/thicket → internal/tui �
 th (shell function) → thicket binary (/dev/tty for UI) → stdout: chosen path
                                 │
                     cmd/thicket/main.go
-                                │
-                         internal/tui  (Model/Update/View, Bubble Tea)
-                                │
-                  ┌─────────────┴─────────────┐
-        internal/fsutil (ListDir,     internal/marks (Load,
-        ReadFilePreview)              Save, DefaultPath)
+                          │            │
+                   internal/tui        │
+            (Model/Update/View,        │
+             Bubble Tea)               │
+                  │       │            │
+                  │       └─────┬──────┘
+                  ▼             ▼
+        internal/fsutil   internal/marks (Load,
+        (ListDir,          Save, DefaultPath)
+         ReadFilePreview)
 ```
 
 ## Key Directories
