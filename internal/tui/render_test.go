@@ -129,6 +129,18 @@ func TestRenderColumn_SelectedDirectoryKeepsBoldStyle(t *testing.T) {
 	}
 }
 
+func TestRenderColumn_DirectoryUsesExplicitBlueColor(t *testing.T) {
+	restoreColorProfile(t)
+
+	got := renderColumn(column{
+		entries: []fsutil.Entry{{Name: "directory", IsDir: true}},
+	}, 20, 1)
+	want := dirStyle.Render("directory")
+	if !strings.Contains(got, want) {
+		t.Fatalf("expected directory rendered with explicit color, independent of terminal bold-as-bright defaults:\n%q", got)
+	}
+}
+
 func TestRenderColumn_SelectedSymlinkKeepsFaintSuffix(t *testing.T) {
 	restoreColorProfile(t)
 
