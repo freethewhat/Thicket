@@ -215,16 +215,30 @@ func renderColumn(c column, width, rows int) string {
 			continue
 		}
 		e := c.entries[i]
-		nameWidth := width
+		reservedForSymlink := 0
 		if e.IsSymlink {
-			nameWidth--
+			reservedForSymlink = 1
 		}
+		highlightedDir := i == c.highlightIdx && e.IsDir
+		reservedForMarker := 0
+		if highlightedDir {
+			reservedForMarker = 2
+		}
+		nameWidth := width - reservedForSymlink - reservedForMarker
 		text := truncate(e.Name, nameWidth)
+		nameLen := len([]rune(text))
 		if e.IsDir {
 			text = dirStyle.Render(text)
 		}
 		if e.IsSymlink {
 			text += symlinkStyle.Render("@")
+		}
+		if highlightedDir {
+			// Right-align the '->' marker flush against the pane's inner
+			// edge, however short the name is, rather than butting it
+			// straight up against the name.
+			pad := width - nameLen - reservedForSymlink - 2
+			text += strings.Repeat(" ", pad) + dirStyle.Render("->")
 		}
 		if i == c.highlightIdx {
 			text = selectedStyle.Render(text)

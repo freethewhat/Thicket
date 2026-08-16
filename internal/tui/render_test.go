@@ -123,9 +123,36 @@ func TestRenderColumn_SelectedDirectoryKeepsBoldStyle(t *testing.T) {
 		entries:      []fsutil.Entry{{Name: "directory", IsDir: true}},
 		highlightIdx: 0,
 	}, 20, 1)
-	want := selectedStyle.Render(dirStyle.Render("directory"))
+	want := selectedStyle.Render(dirStyle.Render("directory") + strings.Repeat(" ", 9) + dirStyle.Render("->"))
 	if !strings.Contains(got, want) {
 		t.Fatalf("selected directory lost its bold styling:\n%q", got)
+	}
+}
+
+func TestRenderColumn_SelectedDirectoryGetsRightAlignedArrowMarker(t *testing.T) {
+	restoreColorProfile(t)
+
+	got := renderColumn(column{
+		entries:      []fsutil.Entry{{Name: "dir", IsDir: true}},
+		highlightIdx: 0,
+	}, 20, 1)
+	// Content width is 20: "dir" (3) + 15 spaces of padding + "->" (2) = 20,
+	// flush against the pane's right inner edge regardless of name length.
+	want := selectedStyle.Render(dirStyle.Render("dir") + strings.Repeat(" ", 15) + dirStyle.Render("->"))
+	if !strings.Contains(got, want) {
+		t.Fatalf("expected '->' marker right-aligned to pane width:\n%q", got)
+	}
+}
+
+func TestRenderColumn_SelectedFileHasNoTrailingArrowMarker(t *testing.T) {
+	restoreColorProfile(t)
+
+	got := renderColumn(column{
+		entries:      []fsutil.Entry{{Name: "file.txt", IsDir: false}},
+		highlightIdx: 0,
+	}, 20, 1)
+	if strings.Contains(got, ">") {
+		t.Fatalf("expected highlighted file to have no trailing '>' marker:\n%q", got)
 	}
 }
 
@@ -133,7 +160,8 @@ func TestRenderColumn_DirectoryUsesExplicitBlueColor(t *testing.T) {
 	restoreColorProfile(t)
 
 	got := renderColumn(column{
-		entries: []fsutil.Entry{{Name: "directory", IsDir: true}},
+		entries:      []fsutil.Entry{{Name: "directory", IsDir: true}},
+		highlightIdx: -1,
 	}, 20, 1)
 	want := dirStyle.Render("directory")
 	if !strings.Contains(got, want) {
