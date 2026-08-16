@@ -36,9 +36,11 @@ var Keybindings = []KeyBinding{
 	{"d (in marks list)", "Delete the highlighted mark"},
 }
 
-// keyColWidth is wide enough to hold the longest Keys entry ("q, Esc,
-// Ctrl-C") plus a two-space gutter before the Action column.
-const keyColWidth = 16
+// KeyColWidth is wide enough to hold the longest Keys entry
+// ("d (in marks list)") plus a two-space gutter before the Action column.
+// cmd/thicket's helpText reuses this constant so the in-app ? help screen
+// and --help output never drift out of alignment with each other.
+const KeyColWidth = 19
 
 // renderHelp draws the full-screen keybinding reference shown while
 // Model.helpMode is true. It replaces the column layout entirely (see
@@ -49,7 +51,7 @@ func (m Model) renderHelp(rows int) string {
 	lines := make([]string, 0, len(Keybindings)+2)
 	lines = append(lines, "Keybindings", "")
 	for _, kb := range Keybindings {
-		lines = append(lines, fmt.Sprintf("%-*s%s", keyColWidth, kb.Keys, kb.Action))
+		lines = append(lines, fmt.Sprintf("%-*s%s", KeyColWidth, kb.Keys, kb.Action))
 	}
 	content := strings.Join(lines, "\n")
 	width := m.width - paneBorderWidth

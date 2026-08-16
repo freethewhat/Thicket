@@ -372,6 +372,26 @@ func TestView_HelpModeShowsKeybindingsAndHidesColumns(t *testing.T) {
 	}
 }
 
+// TestView_HelpScreenKeyColumnFitsWidestRow guards against a keyColWidth
+// regression: the widest Keys entry ("d (in marks list)", 17 runes) must
+// still get its full two-space gutter before the Action column, not be
+// jammed against it because the column width fell behind after a longer
+// entry was added.
+func TestView_HelpScreenKeyColumnFitsWidestRow(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(Model)
+
+	out := m.View()
+
+	want := "d (in marks list)  Delete the highlighted mark"
+	if !strings.Contains(out, want) {
+		t.Fatalf("expected gutter-separated widest row %q in help screen:\n%s", want, out)
+	}
+}
+
 func TestView_MarksListEmptyShowsNoMarksSetMessage(t *testing.T) {
 	root := setupFixture(t)
 	m := newTestModel(t, root)
