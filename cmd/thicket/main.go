@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -38,5 +39,13 @@ func main() {
 	if !ok {
 		os.Exit(1)
 	}
-	fmt.Fprintln(os.Stdout, path)
+	if err := writeSelection(os.Stdout, path); err != nil {
+		fmt.Fprintf(os.Stderr, "thicket: writing selected path: %v\n", err)
+		os.Exit(2)
+	}
+}
+
+func writeSelection(w io.Writer, path string) error {
+	_, err := fmt.Fprintln(w, path)
+	return err
 }
