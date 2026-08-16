@@ -30,6 +30,10 @@ var Keybindings = []KeyBinding{
 	{"r", "Refresh the active directory's listing"},
 	{"/", "Type-ahead search the active column"},
 	{"?", "Toggle this help screen"},
+	{"m", "Bookmark the active directory under a letter"},
+	{"`", "Jump to a bookmarked directory by letter"},
+	{"'", "Open the marks list"},
+	{"d (in marks list)", "Delete the highlighted mark"},
 }
 
 // keyColWidth is wide enough to hold the longest Keys entry ("q, Esc,
