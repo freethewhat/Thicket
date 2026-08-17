@@ -572,3 +572,97 @@ func TestView_HelpScreenStaysWithinPaneHeight(t *testing.T) {
 		t.Fatalf("View() produced %d lines, want exactly m.height (%d):\n%s", len(lines), m.height, out)
 	}
 }
+
+func TestView_FindModeShowsFullScreenResultList(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	out := m.View()
+
+	if !strings.Contains(out, filepath.Join("sub", "leaf.txt")) {
+		t.Fatalf("View() missing walked result:\n%s", out)
+	}
+	if strings.Contains(out, "↑/k ↓/j move · PgUp/PgDn page") {
+		t.Fatal("expected column layout's normal hints replaced while findMode is true")
+	}
+}
+
+func TestView_FindModeShowsNoMatches(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("zzzznomatch")})
+	m = updated.(Model)
+
+	out := m.View()
+
+	if !strings.Contains(out, "no matches") {
+		t.Fatalf("View() missing 'no matches':\n%s", out)
+	}
+}
+
+func TestView_FindModeShowsTruncatedIndicator(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.findMode = true
+	m.findResults = []fsutil.WalkEntry{{Entry: fsutil.Entry{Name: "a"}, RelPath: "a"}}
+	m.findCursor = 0
+	m.findTruncated = true
+
+	out := m.View()
+
+	if !strings.Contains(out, "truncated") {
+		t.Fatalf("View() missing truncated indicator:\n%s", out)
+	}
+}
+
+func TestView_FindModeHighlightsCursorRow(t *testing.T) {
+	restoreColorProfile(t)
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.findMode = true
+	m.findResults = []fsutil.WalkEntry{
+		{Entry: fsutil.Entry{Name: "a"}, RelPath: "a"},
+		{Entry: fsutil.Entry{Name: "b"}, RelPath: "b"},
+	}
+	m.findCursor = 1
+
+	out := m.renderFind(m.visibleRows())
+
+	want := selectedStyle.Render(truncate("b", m.width-paneBorderWidth))
+	if !strings.Contains(out, want) {
+		t.Fatalf("renderFind() missing highlighted row:\n%s\nwant substring:\n%s", out, want)
+	}
+}
+
+func TestView_StatusLineShowsFindPromptAndMatchCount(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("leaf")})
+	m = updated.(Model)
+
+	got := m.statusLine()
+
+	if !strings.Contains(got, "find/leaf") {
+		t.Fatalf("statusLine() missing find prompt: %q", got)
+	}
+	if !strings.Contains(got, "(1)") {
+		t.Fatalf("statusLine() missing match count: %q", got)
+	}
+}
+
+func TestView_StatusLineFindHintDiscoverable(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 200
+
+	if !strings.Contains(m.statusLine(), "f find") {
+		t.Fatalf("statusLine() missing 'f find' hint: %q", m.statusLine())
+	}
+}
