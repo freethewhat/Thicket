@@ -1,0 +1,73 @@
+name: Enhancement
+description: Propose a new feature or improvement for thicket
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing an enhancement. See `AGENTS.md` for the current
+        architecture (fsutil / marks / tui / cmd layering, synchronous-only
+        Bubble Tea model, v1 non-goals) before filling this out — constraints
+        below should call out anything this proposal needs to reconcile with it.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing the feature.
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem it solves
+      description: >
+        What's missing today, why it matters, and any prior art (e.g. how
+        other TUI file managers handle this) that motivates the approach.
+    validations:
+      required: true
+
+  - type: textarea
+    id: approach
+    attributes:
+      label: Rough idea of how it would work
+      description: >
+        Sketch the implementation. Name which layer(s) are affected
+        (internal/fsutil, internal/marks, internal/tui, cmd/thicket) and how
+        they'd change.
+      placeholder: |
+        - internal/fsutil: ...
+        - internal/tui: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: requirements
+    attributes:
+      label: Requirements
+      description: Hard behavioral or performance requirements the solution must satisfy.
+    validations:
+      required: true
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Constraints
+      description: >
+        Architectural rules this must respect (e.g. no goroutines/tea.Cmd, no
+        new external dependencies, Linux-only assumptions) and any v1
+        non-goals (design spec §3) it needs to explicitly reconcile with.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Checklist of observable, testable conditions that define "done".
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true
