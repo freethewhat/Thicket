@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"thicket/internal/fsutil"
+	marksPkg "thicket/internal/marks"
 )
 
 func mustMkdir(t *testing.T, path string) {
@@ -45,7 +47,7 @@ func setupFixture(t *testing.T) string {
 
 func newTestModel(t *testing.T, path string) Model {
 	t.Helper()
-	m, err := New(path)
+	m, err := New(path, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", path, err)
 	}
@@ -796,7 +798,7 @@ func TestUpdate_PageDownMovesCursorByVisibleRows(t *testing.T) {
 	for i := range 30 {
 		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
 	}
-	m, err := New(root)
+	m, err := New(root, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", root, err)
 	}
@@ -816,7 +818,7 @@ func TestUpdate_PageUpMovesCursorByVisibleRows(t *testing.T) {
 	for i := range 30 {
 		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
 	}
-	m, err := New(root)
+	m, err := New(root, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", root, err)
 	}
@@ -840,7 +842,7 @@ func TestUpdate_PageDownClampsAtLastEntry(t *testing.T) {
 	for i := range 30 {
 		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
 	}
-	m, err := New(root)
+	m, err := New(root, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", root, err)
 	}
@@ -864,7 +866,7 @@ func TestUpdate_PageUpClampsAtFirstEntry(t *testing.T) {
 	for i := range 30 {
 		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
 	}
-	m, err := New(root)
+	m, err := New(root, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", root, err)
 	}
@@ -888,7 +890,7 @@ func TestUpdate_HomeJumpsToFirstEntry(t *testing.T) {
 	for i := range 30 {
 		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
 	}
-	m, err := New(root)
+	m, err := New(root, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", root, err)
 	}
@@ -912,7 +914,7 @@ func TestUpdate_EndJumpsToLastEntry(t *testing.T) {
 	for i := range 30 {
 		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
 	}
-	m, err := New(root)
+	m, err := New(root, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", root, err)
 	}
@@ -967,5 +969,457 @@ func TestUpdate_SearchPageAndHomeEndKeysAreNoops(t *testing.T) {
 	}
 	if !m.searchMode {
 		t.Fatal("expected still in searchMode")
+	}
+}
+
+func TestSortedMarkLetters_LowercaseBeforeUppercaseAlphabeticalWithinCase(t *testing.T) {
+	m := marksPkg.Marks{'Z': "/z", 'b': "/b", 'a': "/a", 'A': "/cap-a"}
+	got := sortedMarkLetters(m)
+	want := []rune{'a', 'b', 'A', 'Z'}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("sortedMarkLetters = %q, want %q", string(got), string(want))
+	}
+}
+
+func TestSortedMarkLetters_EmptyReturnsEmptySlice(t *testing.T) {
+	if got := sortedMarkLetters(marksPkg.Marks{}); len(got) != 0 {
+		t.Fatalf("sortedMarkLetters(empty) = %v, want empty", got)
+	}
+}
+
+func TestMarksListCursorFor_ZeroWhenNonEmpty(t *testing.T) {
+	if got := marksListCursorFor(marksPkg.Marks{'a': "/x"}); got != 0 {
+		t.Fatalf("marksListCursorFor(non-empty) = %d, want 0", got)
+	}
+}
+
+func TestMarksListCursorFor_NegativeOneWhenEmpty(t *testing.T) {
+	if got := marksListCursorFor(marksPkg.Marks{}); got != -1 {
+		t.Fatalf("marksListCursorFor(empty) = %d, want -1", got)
+	}
+}
+
+func TestNew_LoadsExistingMarksFromDisk(t *testing.T) {
+	root := setupFixture(t)
+	marksPath := filepath.Join(t.TempDir(), "marks")
+	if err := marksPkg.Save(marksPath, marksPkg.Marks{'a': root}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	m, err := New(root, marksPath)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if m.markTable['a'] != root {
+		t.Fatalf("markTable['a'] = %q, want %q", m.markTable['a'], root)
+	}
+	if m.marksCursor != 0 {
+		t.Fatalf("marksCursor = %d, want 0 (non-empty markTable)", m.marksCursor)
+	}
+}
+
+func TestNew_NoMarksFileGivesNegativeOneCursor(t *testing.T) {
+	root := setupFixture(t)
+	marksPath := filepath.Join(t.TempDir(), "marks")
+
+	m, err := New(root, marksPath)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if m.marksCursor != -1 {
+		t.Fatalf("marksCursor = %d, want -1 (no marks file yet)", m.marksCursor)
+	}
+}
+
+func TestUpdate_MSetsMarkSetPending(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = updated.(Model)
+
+	if !m.markSetPending {
+		t.Fatal("expected markSetPending == true after m")
+	}
+}
+
+func TestUpdate_MarkSetPendingLetterSavesMarkAndClearsPending(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	// Move cursor off the leading "sub" directory onto "file.txt" so this
+	// test isolates the activePath-fallback branch of selectedDirPath;
+	// the cursor-on-a-directory branch is covered separately below.
+	m.activeCursor = fsutil.IndexOfName(m.activeEntries, "file.txt")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	if m.markSetPending {
+		t.Fatal("expected markSetPending == false after letter")
+	}
+	if m.markTable['a'] != root {
+		t.Fatalf("markTable['a'] = %q, want %q", m.markTable['a'], root)
+	}
+	saved, err := marksPkg.Load(m.marksPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if saved['a'] != root {
+		t.Fatalf("persisted mark['a'] = %q, want %q", saved['a'], root)
+	}
+}
+
+// TestUpdate_MarkSetBookmarksHighlightedDirectoryNotActivePath guards
+// against regressing to bookmarking the listing one level up: with the
+// cursor left on its default position (the first entry, "sub" — a
+// directory), m<letter> must mark root/sub, the directory the cursor and
+// preview column are highlighting, not root itself.
+func TestUpdate_MarkSetBookmarksHighlightedDirectoryNotActivePath(t *testing.T) {
+	root := setupFixture(t)
+	sub := filepath.Join(root, "sub")
+	m := newTestModel(t, root)
+	if m.activeEntries[m.activeCursor].Name != "sub" {
+		t.Fatalf("precondition: cursor on %q, want \"sub\"", m.activeEntries[m.activeCursor].Name)
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	if m.markTable['a'] != sub {
+		t.Fatalf("markTable['a'] = %q, want %q", m.markTable['a'], sub)
+	}
+}
+
+func TestUpdate_MarkSetPendingNonLetterCancelsWithoutMutation(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+
+	if m.markSetPending {
+		t.Fatal("expected markSetPending == false after Esc")
+	}
+	if len(m.markTable) != 0 {
+		t.Fatalf("expected no mark set, got %+v", m.markTable)
+	}
+}
+
+func TestUpdate_MarkSetOverwritesExistingLetterSilently(t *testing.T) {
+	root := setupFixture(t)
+	sub := filepath.Join(root, "sub")
+	grand := filepath.Join(sub, "grand")
+	m := newTestModel(t, root)
+	m.markTable['a'] = grand // pre-existing mark, distinct from the cursor's default target (sub)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	if m.markTable['a'] != sub {
+		t.Fatalf("markTable['a'] = %q, want overwritten to %q", m.markTable['a'], sub)
+	}
+}
+
+func TestUpdate_BacktickSetsMarkJumpPending(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("`")})
+	m = updated.(Model)
+
+	if !m.markJumpPending {
+		t.Fatal("expected markJumpPending == true after `")
+	}
+}
+
+func TestUpdate_MarkJumpPendingKnownLetterNavigatesAndClearsPending(t *testing.T) {
+	root := setupFixture(t)
+	sub := filepath.Join(root, "sub")
+	m := newTestModel(t, root)
+	m.markTable['a'] = sub
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("`")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	if m.markJumpPending {
+		t.Fatal("expected markJumpPending == false after letter")
+	}
+	if m.activePath != sub {
+		t.Fatalf("activePath = %q, want %q", m.activePath, sub)
+	}
+}
+
+func TestUpdate_MarkJumpPendingUnknownLetterSetsStatusErr(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("`")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("z")})
+	m = updated.(Model)
+
+	if m.markJumpPending {
+		t.Fatal("expected markJumpPending == false")
+	}
+	if m.statusErr != "no mark: z" {
+		t.Fatalf("statusErr = %q, want %q", m.statusErr, "no mark: z")
+	}
+}
+
+func TestUpdate_MarkJumpPendingDeletedTargetSetsStatusErrKeepsPath(t *testing.T) {
+	root := setupFixture(t)
+	gone := filepath.Join(t.TempDir(), "gone")
+	mustMkdir(t, gone)
+	m := newTestModel(t, root)
+	m.markTable['a'] = gone
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatal(err)
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("`")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	if m.activePath != root {
+		t.Fatalf("activePath changed despite deleted mark target: %q", m.activePath)
+	}
+	if m.statusErr == "" {
+		t.Fatal("expected statusErr to be set")
+	}
+}
+
+func TestUpdate_MarkJumpPendingNonLetterCancelsWithoutMutation(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.markTable['a'] = root
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("`")})
+	m = updated.(Model)
+	prevPath := m.activePath
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+
+	if m.markJumpPending {
+		t.Fatal("expected markJumpPending == false after Esc")
+	}
+	if m.activePath != prevPath {
+		t.Fatalf("activePath changed on cancel: %q", m.activePath)
+	}
+	if m.statusErr != "" {
+		t.Fatalf("statusErr = %q, want untouched empty", m.statusErr)
+	}
+}
+
+func TestUpdate_QuoteOpensMarksListMode(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.markTable['a'] = root
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("'")})
+	m = updated.(Model)
+
+	if !m.marksListMode {
+		t.Fatal("expected marksListMode == true after '")
+	}
+	if m.marksCursor != 0 {
+		t.Fatalf("marksCursor = %d, want 0", m.marksCursor)
+	}
+}
+
+func TestUpdate_MarksListUpDownClampsAtBothEnds(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.markTable['a'] = root
+	m.markTable['b'] = root
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("'")})
+	m = updated.(Model) // sorted letters: a, b; marksCursor starts at 0
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated.(Model)
+	if m.marksCursor != 0 {
+		t.Fatalf("marksCursor = %d, want clamped to 0", m.marksCursor)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated.(Model)
+	if m.marksCursor != 1 {
+		t.Fatalf("marksCursor = %d, want clamped to 1 (last index)", m.marksCursor)
+	}
+}
+
+func TestUpdate_MarksListEnterNavigatesAndClosesList(t *testing.T) {
+	root := setupFixture(t)
+	sub := filepath.Join(root, "sub")
+	m := newTestModel(t, root)
+	m.markTable['a'] = sub
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("'")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if m.marksListMode {
+		t.Fatal("expected marksListMode == false after Enter")
+	}
+	if m.activePath != sub {
+		t.Fatalf("activePath = %q, want %q", m.activePath, sub)
+	}
+}
+
+func TestUpdate_MarksListEnterOnDeletedTargetSetsStatusErrStaysOpen(t *testing.T) {
+	root := setupFixture(t)
+	gone := filepath.Join(t.TempDir(), "gone")
+	mustMkdir(t, gone)
+	m := newTestModel(t, root)
+	m.markTable['a'] = gone
+	if err := os.RemoveAll(gone); err != nil {
+		t.Fatal(err)
+	}
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("'")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if !m.marksListMode {
+		t.Fatal("expected marksListMode to stay open on error")
+	}
+	if m.statusErr == "" {
+		t.Fatal("expected statusErr to be set")
+	}
+}
+
+func TestUpdate_MarksListDDeletesHighlightedMarkAndPreservesInRangeCursor(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.markTable['a'] = root
+	m.markTable['b'] = root
+	m.markTable['c'] = root
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("'")})
+	m = updated.(Model) // sorted: a, b, c; cursor starts 0
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated.(Model) // cursor 1 -> highlights 'b'
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = updated.(Model)
+
+	if _, ok := m.markTable['b']; ok {
+		t.Fatal("expected mark 'b' deleted")
+	}
+	if len(m.markTable) != 2 {
+		t.Fatalf("markTable = %+v, want 2 remaining", m.markTable)
+	}
+	// marksCursor (1) was still in range for the shrunk table (a, c: len
+	// 2) -> preserved, now highlighting 'c', the entry that shifted up
+	// into that slot. This is a clamp, not a reset (see Global
+	// Constraints' ruling) — it must NOT jump back to 0.
+	if m.marksCursor != 1 {
+		t.Fatalf("marksCursor = %d, want 1 (preserved, in range)", m.marksCursor)
+	}
+	saved, err := marksPkg.Load(m.marksPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(saved) != 2 {
+		t.Fatalf("persisted marks = %+v, want 2 remaining", saved)
+	}
+}
+
+func TestUpdate_MarksListDOnLastRowResetsCursorToTop(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.markTable['a'] = root
+	m.markTable['b'] = root
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("'")})
+	m = updated.(Model) // sorted: a, b; cursor 0
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = updated.(Model) // cursor 1 -> highlights 'b', the last row
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = updated.(Model)
+
+	// marksCursor (1) is now out of range for the shrunk table (a: len 1)
+	// -> resets to 0, same as reload()'s activeCursor convention.
+	if m.marksCursor != 0 {
+		t.Fatalf("marksCursor = %d, want 0 (old cursor now out of range)", m.marksCursor)
+	}
+}
+
+func TestUpdate_MarksListDOnEmptyListIsNoop(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("'")})
+	m = updated.(Model) // empty list, cursor -1
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")})
+	m = updated.(Model)
+
+	if !m.marksListMode {
+		t.Fatal("expected marksListMode still open")
+	}
+	if m.marksCursor != -1 {
+		t.Fatalf("marksCursor = %d, want -1", m.marksCursor)
+	}
+}
+
+func TestUpdate_MarksListQAndEscCloseWithoutMutation(t *testing.T) {
+	root := setupFixture(t)
+	for _, key := range []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune("q")},
+		{Type: tea.KeyEsc},
+	} {
+		m := newTestModel(t, root)
+		m.markTable['a'] = root
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("'")})
+		m = updated.(Model)
+
+		updated, _ = m.Update(key)
+		m = updated.(Model)
+
+		if m.marksListMode {
+			t.Fatalf("expected marksListMode == false after %v", key)
+		}
+		if len(m.markTable) != 1 {
+			t.Fatalf("expected mark untouched after %v, got %+v", key, m.markTable)
+		}
+	}
+}
+
+func TestUpdate_CtrlCQuitsFromEveryMarksMode(t *testing.T) {
+	root := setupFixture(t)
+	enterKeys := []tea.KeyMsg{
+		{Type: tea.KeyRunes, Runes: []rune("m")}, // -> markSetPending
+		{Type: tea.KeyRunes, Runes: []rune("`")}, // -> markJumpPending
+		{Type: tea.KeyRunes, Runes: []rune("'")}, // -> marksListMode
+	}
+	for _, enterKey := range enterKeys {
+		m := newTestModel(t, root)
+		updated, _ := m.Update(enterKey)
+		m = updated.(Model)
+
+		updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+		m = updated.(Model)
+
+		if cmd == nil {
+			t.Fatalf("Ctrl-C after %v must quit (cmd != nil)", enterKey)
+		}
+		if !m.quitting || m.selected {
+			t.Fatalf("Ctrl-C after %v: quitting=%v selected=%v, want quitting=true selected=false", enterKey, m.quitting, m.selected)
+		}
 	}
 }

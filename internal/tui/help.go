@@ -3,6 +3,8 @@ package tui
 import (
 	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // KeyBinding is one row of the keybinding table: the key(s) that trigger an
@@ -30,11 +32,17 @@ var Keybindings = []KeyBinding{
 	{"r", "Refresh the active directory's listing"},
 	{"/", "Type-ahead search the active column"},
 	{"?", "Toggle this help screen"},
+	{"m", "Bookmark the active directory under a letter"},
+	{"`", "Jump to a bookmarked directory by letter"},
+	{"'", "Open the marks list"},
+	{"d (in marks list)", "Delete the highlighted mark"},
 }
 
-// keyColWidth is wide enough to hold the longest Keys entry ("q, Esc,
-// Ctrl-C") plus a two-space gutter before the Action column.
-const keyColWidth = 16
+// KeyColWidth is wide enough to hold the longest Keys entry
+// ("d (in marks list)") plus a two-space gutter before the Action column.
+// cmd/thicket's helpText reuses this constant so the in-app ? help screen
+// and --help output never drift out of alignment with each other.
+const KeyColWidth = 19
 
 // renderHelp draws the full-screen keybinding reference shown while
 // Model.helpMode is true. It replaces the column layout entirely (see
@@ -45,12 +53,13 @@ func (m Model) renderHelp(rows int) string {
 	lines := make([]string, 0, len(Keybindings)+2)
 	lines = append(lines, "Keybindings", "")
 	for _, kb := range Keybindings {
-		lines = append(lines, fmt.Sprintf("%-*s%s", keyColWidth, kb.Keys, kb.Action))
+		lines = append(lines, fmt.Sprintf("%-*s%s", KeyColWidth, kb.Keys, kb.Action))
 	}
 	content := strings.Join(lines, "\n")
 	width := m.width - paneBorderWidth
 	if width < 0 {
 		width = 0
 	}
-	return activePaneStyle.Width(width).Height(rows).Render(content)
+	inner := lipgloss.NewStyle().Width(width).Height(rows).MaxHeight(rows).Render(content)
+	return activePaneStyle.Render(inner)
 }

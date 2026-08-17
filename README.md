@@ -45,6 +45,10 @@ for a summary, `man thicket` for the full manual). Keys:
 | `r` | Refresh the active directory's listing |
 | `/` | Type-ahead search the active column: type to jump to the first matching entry; `Enter` keeps the match, `Esc` cancels back to where the cursor was |
 | `?` | Toggle the in-app help screen |
+| `m` | Bookmark the active directory under a letter |
+| `` ` `` | Jump to a bookmarked directory by letter |
+| `'` | Open the marks list |
+| `d` (in marks list) | Delete the highlighted mark |
 
 Navigation only in v1 — no file create/rename/delete/copy/move, no config
 file.

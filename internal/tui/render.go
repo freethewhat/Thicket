@@ -77,6 +77,9 @@ func (m Model) View() string {
 	if m.helpMode {
 		return header + "\n" + m.renderHelp(rows) + "\n" + m.statusLine()
 	}
+	if m.marksListMode {
+		return header + "\n" + m.renderMarksList(rows) + "\n" + m.statusLine()
+	}
 	cols := m.buildColumns(rows)
 
 	colWidth := m.width/len(cols) - paneBorderWidth
@@ -257,7 +260,7 @@ func renderColumn(c column, width, rows int) string {
 }
 
 func (m Model) statusLine() string {
-	hints := "↑/k ↓/j move · PgUp/PgDn page · Home/End top/bottom · →/l open · ←/h up · Enter cd+exit · . hidden · r refresh · / search · ? help · q quit"
+	hints := "↑/k ↓/j move · PgUp/PgDn page · Home/End top/bottom · →/l open · ←/h up · Enter cd+exit · . hidden · r refresh · / search · ? help · q quit · m mark · ` jump · ' marks"
 	left := hints
 	right := m.activePath
 	isErr := m.statusErr != ""
@@ -279,6 +282,16 @@ func (m Model) statusLine() string {
 			right = "no match"
 			isErr = true
 		}
+	} else if m.markSetPending {
+		left = "mark: _"
+	} else if m.markJumpPending {
+		left = "jump to mark: _"
+	} else if m.marksListMode {
+		// Right side keeps its default statusErr-or-activePath precedence
+		// here, unlike helpMode/searchMode above — spec §7 requires this:
+		// activateMarksListEntry can set statusErr and deliberately stay
+		// in marksListMode, and that error must still surface.
+		left = "↑/k ↓/j move · enter jump · d delete · q/esc close"
 	}
 	return composeStatusLine(left, right, isErr, m.width)
 }
@@ -323,4 +336,32 @@ func truncate(s string, width int) string {
 		return string(r[:width])
 	}
 	return string(r[:width-1]) + "…"
+}
+
+// renderMarksList draws the full-screen marks browser shown while
+// Model.marksListMode is true (spec §7). It replaces the column layout
+// entirely — full-screen replacement, not an overlay — mirroring
+// renderHelp in help.go.
+func (m Model) renderMarksList(rows int) string {
+	width := m.width - paneBorderWidth
+	if width < 0 {
+		width = 0
+	}
+	letters := sortedMarkLetters(m.markTable)
+	var content string
+	if len(letters) == 0 {
+		content = "no marks set"
+	} else {
+		lines := make([]string, len(letters))
+		for i, r := range letters {
+			line := truncate(fmt.Sprintf("%c  %s", r, m.markTable[r]), width)
+			if i == m.marksCursor {
+				line = selectedStyle.Render(line)
+			}
+			lines[i] = line
+		}
+		content = strings.Join(lines, "\n")
+	}
+	inner := lipgloss.NewStyle().Width(width).Height(rows).MaxHeight(rows).Render(content)
+	return activePaneStyle.Render(inner)
 }

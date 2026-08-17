@@ -218,7 +218,7 @@ func TestView_ActiveColumnScrollTracksActiveScroll(t *testing.T) {
 	for i := range 30 {
 		mustWriteFile(t, filepath.Join(root, fmt.Sprintf("n%02d", i)), "x")
 	}
-	m, err := New(root)
+	m, err := New(root, filepath.Join(t.TempDir(), "marks"))
 	if err != nil {
 		t.Fatalf("New(%q): %v", root, err)
 	}
@@ -369,5 +369,206 @@ func TestView_HelpModeShowsKeybindingsAndHidesColumns(t *testing.T) {
 	}
 	if strings.Contains(out, "sub") || strings.Contains(out, "file.txt") {
 		t.Fatalf("help screen must not show the normal column layout:\n%s", out)
+	}
+}
+
+// TestView_HelpScreenKeyColumnFitsWidestRow guards against a keyColWidth
+// regression: the widest Keys entry ("d (in marks list)", 17 runes) must
+// still get its full two-space gutter before the Action column, not be
+// jammed against it because the column width fell behind after a longer
+// entry was added.
+func TestView_HelpScreenKeyColumnFitsWidestRow(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.height = 24 // tall enough that visibleRows() >= len(Keybindings)+2, so no row is clipped
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(Model)
+
+	out := m.View()
+
+	want := "d (in marks list)  Delete the highlighted mark"
+	if !strings.Contains(out, want) {
+		t.Fatalf("expected gutter-separated widest row %q in help screen:\n%s", want, out)
+	}
+}
+
+func TestView_MarksListEmptyShowsNoMarksSetMessage(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.marksListMode = true
+	m.marksCursor = -1
+
+	out := m.View()
+
+	if !strings.Contains(out, "no marks set") {
+		t.Fatalf("View() missing empty-marks message:\n%s", out)
+	}
+}
+
+func TestView_MarksListShowsSortedLetterPathRows(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.markTable['b'] = "/second"
+	m.markTable['a'] = "/first"
+	m.marksListMode = true
+	m.marksCursor = 0
+
+	out := m.View()
+
+	aIdx := strings.Index(out, "/first")
+	bIdx := strings.Index(out, "/second")
+	if aIdx == -1 || bIdx == -1 || bIdx < aIdx {
+		t.Fatalf("expected 'a' row before 'b' row (sorted):\n%s", out)
+	}
+}
+
+func TestView_MarksListHighlightsCursorRow(t *testing.T) {
+	restoreColorProfile(t)
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.markTable['a'] = "/first"
+	m.marksListMode = true
+	m.marksCursor = 0
+
+	out := m.renderMarksList(m.visibleRows())
+
+	want := selectedStyle.Render(truncate(fmt.Sprintf("%c  %s", 'a', "/first"), m.width-paneBorderWidth))
+	if !strings.Contains(out, want) {
+		t.Fatalf("renderMarksList() missing highlighted row:\n%s\nwant substring:\n%s", out, want)
+	}
+}
+
+func TestView_StatusLineShowsMarkSetPrompt(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	m.markSetPending = true
+
+	if !strings.Contains(m.statusLine(), "mark: _") {
+		t.Fatalf("statusLine() missing mark-set prompt: %q", m.statusLine())
+	}
+}
+
+func TestView_StatusLineShowsMarkJumpPrompt(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	m.markJumpPending = true
+
+	if !strings.Contains(m.statusLine(), "jump to mark: _") {
+		t.Fatalf("statusLine() missing mark-jump prompt: %q", m.statusLine())
+	}
+}
+
+func TestView_StatusLineShowsMarksListHints(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	m.marksListMode = true
+
+	got := m.statusLine()
+	for _, want := range []string{"move", "jump", "delete", "close"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("statusLine() missing %q: %q", want, got)
+		}
+	}
+}
+
+// TestView_MarksListManyMarksFillPaneToExactVisibleHeightWithBorderIntact
+// covers the case where the user has accumulated more marks than fit on
+// screen: lipgloss's Height() is a minimum, not a clamp, so without an
+// explicit MaxHeight the pane would grow past the available rows and push
+// the header off-screen (the same failure renderColumn's MaxHeight guards
+// against for the normal column layout). Applying MaxHeight to the
+// *bordered* style rather than a borderless inner block truncates the
+// border itself away on every render, so this asserts the exact total
+// line count (not just an upper bound) and that the bottom border survives.
+func TestView_MarksListManyMarksFillPaneToExactVisibleHeightWithBorderIntact(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.height = 12
+	m.width = 100
+	for r := 'a'; r <= 'o'; r++ { // 15 marks, comfortably more than visibleRows()
+		m.markTable[r] = "/" + string(r)
+	}
+	m.marksListMode = true
+	m.marksCursor = 0
+
+	out := m.View()
+
+	lines := strings.Split(out, "\n")
+	if len(lines) != m.height {
+		t.Fatalf("View() produced %d lines, want exactly m.height (%d):\n%s", len(lines), m.height, out)
+	}
+	if lines[0] != truncate(m.activePath, m.width) {
+		t.Fatalf("expected header as first line, got %q", lines[0])
+	}
+	borderLine := lines[len(lines)-2] // pane's bottom border, just above the status line
+	if !strings.Contains(borderLine, lipgloss.ThickBorder().BottomLeft) {
+		t.Fatalf("expected bottom border on pane's last line, got %q\nfull output:\n%s", borderLine, out)
+	}
+}
+
+// TestView_MarksListFewMarksStillFillsFullHeightBorderedBox covers the
+// opposite edge: with fewer marks than visibleRows(), the pane must still
+// pad out to the full box height (not shrink to just the content) and
+// keep its border, since Height(rows) with no MaxHeight interference is
+// the floor that guarantees this.
+func TestView_MarksListFewMarksStillFillsFullHeightBorderedBox(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.height = 16
+	m.width = 100
+	m.markTable['a'] = "/only"
+	m.marksListMode = true
+	m.marksCursor = 0
+
+	out := m.View()
+
+	lines := strings.Split(out, "\n")
+	if len(lines) != m.height {
+		t.Fatalf("View() produced %d lines, want exactly m.height (%d):\n%s", len(lines), m.height, out)
+	}
+	borderLine := lines[len(lines)-2] // pane's bottom border, just above the status line
+	if !strings.Contains(borderLine, lipgloss.ThickBorder().BottomLeft) {
+		t.Fatalf("expected bottom border on pane's last line, got %q\nfull output:\n%s", borderLine, out)
+	}
+}
+
+// TestView_StatusLineMarksListSurfacesStatusErr covers the deliberate
+// asymmetry with helpMode/searchMode: marksListMode's statusLine branch
+// leaves `right`/`isErr` at their default statusErr-or-activePath
+// precedence so that activateMarksListEntry can set statusErr and stay in
+// marksListMode with the error still visible.
+func TestView_StatusLineMarksListSurfacesStatusErr(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	m.marksListMode = true
+	m.statusErr = "some error"
+
+	if !strings.Contains(m.statusLine(), "some error") {
+		t.Fatalf("statusLine() missing statusErr while marksListMode: %q", m.statusLine())
+	}
+}
+
+// TestView_HelpScreenStaysWithinPaneHeight covers the same overflow bug
+// renderMarksList's MaxHeight regression tests guard against: lipgloss's
+// Height() is a floor, not a clamp, so without an explicit MaxHeight the
+// help pane would grow past the available rows once Keybindings no longer
+// fits within m.visibleRows(), pushing the header off-screen.
+func TestView_HelpScreenStaysWithinPaneHeight(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.height = 12 // visibleRows() (8) < len(Keybindings)+2 (18)
+	m.width = 100
+	m.helpMode = true
+
+	out := m.View()
+
+	lines := strings.Split(out, "\n")
+	if len(lines) != m.height {
+		t.Fatalf("View() produced %d lines, want exactly m.height (%d):\n%s", len(lines), m.height, out)
 	}
 }
