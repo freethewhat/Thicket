@@ -718,3 +718,31 @@ func TestView_FindModeScrollsToKeepCursorVisible(t *testing.T) {
 		t.Fatalf("expected cursor entry n09 visible after scrolling:\n%s", out)
 	}
 }
+
+// TestView_FindModeSingleRowPaneWithTruncatedStillShowsEntry covers a
+// review defect introduced by the cursor-scrolling fix: reserving a
+// bottom row for the truncated indicator whenever entryRows > 0 could
+// drive entryRows to 0 in a 1-row-tall pane, making scrollStartFor return
+// an out-of-range start and rendering nothing but the truncated
+// indicator — worse than before, since not even one match/cursor row was
+// visible. The indicator must be dropped in favor of showing at least one
+// entry when the pane is that small.
+func TestView_FindModeSingleRowPaneWithTruncatedStillShowsEntry(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.height = 5 // visibleRows() == 1
+	m.width = 100
+	m.findMode = true
+	m.findResults = []fsutil.WalkEntry{
+		{Entry: fsutil.Entry{Name: "n00"}, RelPath: "n00"},
+		{Entry: fsutil.Entry{Name: "n01"}, RelPath: "n01"},
+	}
+	m.findCursor = 0
+	m.findTruncated = true
+
+	out := m.renderFind(m.visibleRows())
+
+	if !strings.Contains(out, "n00") {
+		t.Fatalf("expected the cursor's entry visible in a 1-row truncated find pane, got only the truncated indicator:\n%s", out)
+	}
+}

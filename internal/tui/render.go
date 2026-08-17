@@ -392,7 +392,7 @@ func (m Model) renderFind(rows int) string {
 		// when present, so the scrolling window below sizes itself to
 		// the remaining entry rows rather than the full pane height.
 		entryRows := rows
-		if m.findTruncated && entryRows > 0 {
+		if m.findTruncated && entryRows > 1 {
 			entryRows--
 		}
 		// findCursor indexes into the full filtered list (up to the walk
