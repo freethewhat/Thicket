@@ -52,15 +52,22 @@ from the environment at the time you run it (default
 the same as
 .IR scripts/install.sh .
 If you installed to a non-default
-.B PREFIX ,
+.BR PREFIX ,
 export it again before running
-.B thicket update ,
+.BR "thicket update" ,
 or the update will land under
 .IR /usr/local
 instead (see
 .B ENVIRONMENT
 below). Like the install script, includes the same sudo-elevation
 behavior for a non-writable prefix. Equivalent to re-running the install script.
+A start path literally named
+.I update
+in the current directory is shadowed by this subcommand: running
+.B thicket update
+always triggers the installer, never opens such a directory. Pass
+.I ./update
+instead to open it.
 .SH KEYS
 .TP
 .BR Up ", " k

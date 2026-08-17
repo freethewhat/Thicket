@@ -22,8 +22,9 @@ Every other v1 non-goal in §3 still holds.
 ## Architecture & Data Flow
 
 Three-layer module; `cmd/thicket` depends on `internal/tui` and directly on
-`internal/marks` (for `marks.DefaultPath()`), while `internal/tui` depends
-on `internal/fsutil` and `internal/marks`:
+`internal/marks` (for `marks.DefaultPath()`) and `internal/update` (for the
+`update` subcommand), while `internal/tui` depends on
+`internal/{fsutil,marks,update}`:
 
 1. **`internal/fsutil`** — pure filesystem I/O. `ListDir(dir, showHidden) ([]Entry, error)`
    reads a directory, classifies each entry (symlink resolution via
@@ -82,16 +83,16 @@ on `internal/fsutil` and `internal/marks`:
 th (shell function) → thicket binary (/dev/tty for UI) → stdout: chosen path
                                 │
                     cmd/thicket/main.go
-                          │            │
-                   internal/tui        │
-            (Model/Update/View,        │
-             Bubble Tea)               │
-                  │       │            │
-                  │       └─────┬──────┘
-                  ▼             ▼
-        internal/fsutil   internal/marks (Load,
-        (ListDir,          Save, DefaultPath)
-         ReadFilePreview,
+                          │                                      │
+                   internal/tui                                  │
+            (Model/Update/View,                                  │
+             Bubble Tea)                                         │
+        │                 │           │                          │
+        │                 │           └───────────┬──────────────┘
+        ▼                 ▼                       ▼
+        internal/fsutil   internal/update         internal/marks (Load,
+        (ListDir,         (LatestTag,             Save, DefaultPath)
+         ReadFilePreview,  IsNewer, Run)
          WalkSubtree)
 ```
 
@@ -103,6 +104,7 @@ th (shell function) → thicket binary (/dev/tty for UI) → stdout: chosen path
 | `internal/tui/` | Bubble Tea `Model`/`Update`/`View` — navigation state machine and rendering |
 | `internal/marks/` | Pure directory-marks (bookmark) persistence — letter→path table, load/save, no TUI concerns |
 | `internal/fsutil/` | Pure filesystem helpers — directory listing, entry classification, file preview |
+| `internal/update/` | Release check + install — `LatestTag`/`IsNewer`/`Run` |
 | `shell/` | `thicket` shell-function wrappers for bash and zsh (source into rc files) |
 | `man/` | `thicket.1` troff man page (`man thicket` after install) |
 | `docs/superpowers/plans/` | Implementation plan doc(s) — task breakdown with code templates |
@@ -187,6 +189,9 @@ Manual run without installing: `go run ./cmd/thicket [path]`.
 | `internal/tui/search.go` | `firstMatch` — pure case-insensitive substring search over an already-loaded entry list, used by type-ahead search |
 | `internal/marks/marks.go` | `Marks`, `Load`, `Save`, `DefaultPath` — the letter→path bookmark table and its on-disk format |
 | `internal/tui/marks.go` | `sortedMarkLetters`, `marksListCursorFor` — pure helpers behind the marks list screen and `` ` ``/`'` navigation |
+| `internal/update/check.go` | `LatestTag`, `IsNewer` — GitHub releases API check and version comparison |
+| `internal/update/run.go` | `Run` — pipes the embedded `install.sh` to `sh` to perform the update |
+| `scripts/embed.go` | `//go:embed install.sh` — embeds the install script for `internal/update/run.go` |
 | `internal/tui/help.go` | `Keybindings` (single source of truth for the `?` help screen and `cmd/thicket --help`) and `renderHelp` |
 | `shell/thicket.bash`, `shell/thicket.zsh` | `th()` wrapper functions that `cd` the calling shell |
 | `man/thicket.1` | Troff man page — NAME/SYNOPSIS/OPTIONS/KEYS/EXIT STATUS/SHELL INTEGRATION, hand-maintained in sync with `internal/tui/help.go` and the README table |

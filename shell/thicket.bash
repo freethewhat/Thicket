@@ -2,7 +2,7 @@
 #   source /path/to/thicket.bash
 thicket() {
   case "$1" in
-    -h|--help)
+    -h|--help|update)
       command thicket-bin "$@"
       return
       ;;

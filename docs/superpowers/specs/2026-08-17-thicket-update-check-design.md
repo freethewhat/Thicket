@@ -107,35 +107,42 @@ stays valid and unaffected.
 
 ### Update check + toast (`internal/tui`)
 
-`tui.New` gains a `checkVersion` parameter:
+`Model` gains a `WithUpdateCheck(currentVersion string) Model` method — a
+separate step called after `New`, not a new `New` parameter, so the
+~13 existing `tui.New` test call sites don't need to change:
 
 ```go
-func New(startPath, marksPath, checkVersion string) (Model, error)
+func (m Model) WithUpdateCheck(currentVersion string) Model {
+    m.checkVersion = currentVersion
+    return m
+}
 ```
 
-`cmd/thicket/main.go` computes `checkVersion` once, before calling `New`:
-empty string disables the check outright (covers both the opt-out and
-`dev` builds); otherwise it's the build's `version`:
+`cmd/thicket/main.go` calls it once, right after `tui.New` succeeds,
+applying only the opt-out — the `dev`-build check is `Model.Init`'s job,
+not `main.go`'s (see below):
 
 ```go
 checkVersion := version
-if version == "dev" || os.Getenv("THICKET_NO_UPDATE_CHECK") != "" {
+if os.Getenv("THICKET_NO_UPDATE_CHECK") != "" {
     checkVersion = ""
 }
-m, err := tui.New(start, marksPath, checkVersion)
+m = m.WithUpdateCheck(checkVersion)
 ```
 
 `Model` gains an unexported `checkVersion string` field (stored, used only
 by `Init`) and an unexported `updateNotice string` field (rendered by
-`statusLine`, mirrors `statusErr`'s shape).
+`statusLine`, mirrors `statusErr`'s shape). `Init` is where both the
+opt-out and the `dev`-build case are actually disabled, in one place:
 
 ```go
 func (m Model) Init() tea.Cmd {
-    if m.checkVersion == "" {
+    if m.checkVersion == "" || m.checkVersion == "dev" {
         return nil
     }
     return checkUpdateCmd(m.checkVersion)
 }
+```
 
 type updateAvailableMsg struct{ tag string }
 type clearUpdateNoticeMsg struct{}
