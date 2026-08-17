@@ -59,6 +59,7 @@ the full manual). Keys:
 | `.` | Toggle hidden (dotfile) visibility (default off) |
 | `r` | Refresh the active directory's listing |
 | `/` | Type-ahead search the active column: type to jump to the first matching entry; `Enter` keeps the match, `Esc` cancels back to where the cursor was |
+| `f` | Recursive find: type to filter files/directories under the active directory; `Enter` jumps to the match's parent directory, `Esc` cancels |
 | `?` | Toggle the in-app help screen |
 | `m` | Bookmark the active directory under a letter |
 | `` ` `` | Jump to a bookmarked directory by letter |

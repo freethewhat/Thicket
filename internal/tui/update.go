@@ -14,7 +14,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.clampScroll()
-		return m, nil
+		if m.findMode {
+			m.clampFindScroll(m.findEntryRows(m.visibleRows()))
+		}
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyCtrlC {
 			m.quitting = true
@@ -34,6 +36,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.searchMode {
 			m.handleSearchKey(msg)
+			return m, nil
+		}
+		if m.findMode {
+			m.handleFindKey(msg)
 			return m, nil
 		}
 		if m.markSetPending {
@@ -75,6 +81,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reload()
 		case "/":
 			m.enterSearchMode()
+		case "f":
+			m.enterFindMode()
 		case "?":
 			m.helpMode = true
 		case "m":
@@ -255,6 +263,167 @@ func (m *Model) exitSearchMode(restoreCursor bool) {
 		m.activeCursor = m.searchPrevCursor
 		m.clampScroll()
 	}
+}
+
+// enterFindMode runs a one-time recursive walk of activePath's subtree
+// (spec §5) and opens the full-screen find-mode result list. On a walk
+// error (activePath itself unreadable), statusErr is set and find mode is
+// never entered — mirrors handleRight's treatment of a failed ListDir.
+func (m *Model) enterFindMode() {
+	results, truncated, err := fsutil.WalkSubtree(m.activePath, m.showHidden)
+	if err != nil {
+		m.statusErr = err.Error()
+		return
+	}
+	m.findMode = true
+	m.findQuery = ""
+	m.findResults = results
+	m.findTruncated = truncated
+	m.findCursor = -1
+	m.findScroll = 0
+	if len(results) > 0 {
+		m.findCursor = 0
+	}
+	m.statusErr = ""
+}
+
+// exitFindMode closes find mode without touching activePath/activeCursor.
+// commitFindSelection (Task 5) relocates separately, before calling this;
+// every other exit path (Esc, empty-backspace) never relocates.
+func (m *Model) exitFindMode() {
+	m.findMode = false
+	m.findQuery = ""
+}
+
+// handleFindKey processes one key while findMode is true (spec §5).
+// Discriminates on msg.Type, not msg.String() — see Global Constraints.
+// Any msg.Type not matched by a case below (arrows other than Up/Down,
+// Tab, Ctrl-U, Home, PageUp, F-keys, ...) is an explicit no-op.
+func (m *Model) handleFindKey(msg tea.KeyMsg) {
+	switch msg.Type {
+	case tea.KeyRunes:
+		m.appendFindQuery(msg.Runes...)
+	case tea.KeySpace:
+		m.appendFindQuery(' ')
+	case tea.KeyBackspace:
+		if m.findQuery == "" {
+			m.exitFindMode()
+			return
+		}
+		runes := []rune(m.findQuery)
+		m.findQuery = string(runes[:len(runes)-1])
+		m.applyFindFilter()
+	case tea.KeyUp:
+		m.moveFindCursor(-1)
+	case tea.KeyDown:
+		m.moveFindCursor(1)
+	case tea.KeyEnter:
+		m.commitFindSelection()
+	case tea.KeyEsc:
+		m.exitFindMode()
+	}
+}
+
+// appendFindQuery adds runes to findQuery and re-runs the filter. A single
+// KeyMsg can carry more than one rune (bracketed paste, composed input),
+// so callers pass every rune from one message, not just the first.
+func (m *Model) appendFindQuery(runes ...rune) {
+	m.findQuery += string(runes)
+	m.applyFindFilter()
+}
+
+// applyFindFilter resets findCursor against filterWalk(findResults,
+// findQuery): 0 if the filtered view is non-empty, else -1. findScroll
+// resets to 0 alongside it — the filtered view just changed, so the old
+// scroll window no longer corresponds to anything meaningful.
+func (m *Model) applyFindFilter() {
+	filtered := filterWalk(m.findResults, m.findQuery)
+	m.findScroll = 0
+	if len(filtered) == 0 {
+		m.findCursor = -1
+		return
+	}
+	m.findCursor = 0
+}
+
+// moveFindCursor moves findCursor by delta within the current filtered
+// view, clamped at both ends, then nudges findScroll just enough to keep
+// it visible. No-op if the filtered view is empty.
+func (m *Model) moveFindCursor(delta int) {
+	filtered := filterWalk(m.findResults, m.findQuery)
+	if len(filtered) == 0 {
+		return
+	}
+	m.findCursor += delta
+	if m.findCursor < 0 {
+		m.findCursor = 0
+	}
+	if last := len(filtered) - 1; m.findCursor > last {
+		m.findCursor = last
+	}
+	m.clampFindScroll(m.findEntryRows(m.visibleRows()))
+}
+
+// clampFindScroll mirrors clampScroll's persisted-scroll convention for
+// findScroll/findCursor: nudge the window just enough to keep findCursor
+// visible within rows rows, rather than scrollStartFor's pin-to-bottom
+// behavior used by the derived ancestor/preview columns, which have no
+// user-driven cursor of their own.
+func (m *Model) clampFindScroll(rows int) {
+	if rows <= 0 || m.findCursor < 0 {
+		return
+	}
+	if m.findCursor < m.findScroll {
+		m.findScroll = m.findCursor
+	}
+	if m.findCursor >= m.findScroll+rows {
+		m.findScroll = m.findCursor - rows + 1
+	}
+	if m.findScroll < 0 {
+		m.findScroll = 0
+	}
+}
+
+// commitFindSelection relocates activePath/activeCursor to the selected
+// match's parent directory (spec §5's Enter row) and exits find mode. A
+// no-op when findCursor is -1 (empty walk, or the current query matches
+// nothing) — find mode stays open so the user can keep typing. If the
+// relocation target's ListDir fails (the walk snapshot went stale — the
+// match's parent directory was removed or its permissions changed after
+// the walk but before Enter), statusErr is set and find mode is exited
+// anyway, unlike the marks list's analogous Enter failure which stays
+// open: re-showing the now-stale find results would be misleading, so
+// this deliberately drops back to the plain listing instead.
+func (m *Model) commitFindSelection() {
+	filtered := filterWalk(m.findResults, m.findQuery)
+	if m.findCursor < 0 || m.findCursor >= len(filtered) {
+		return
+	}
+	we := filtered[m.findCursor]
+	relDir := filepath.Dir(we.RelPath)
+	newPath := m.activePath
+	if relDir != "." {
+		newPath = filepath.Join(m.activePath, relDir)
+	}
+	entries, err := fsutil.ListDir(newPath, m.showHidden)
+	if err != nil {
+		m.statusErr = err.Error()
+		m.exitFindMode()
+		return
+	}
+	m.activePath = newPath
+	m.activeEntries = entries
+	m.activeCursor = fsutil.IndexOfName(entries, we.Name)
+	if m.activeCursor < 0 {
+		m.activeCursor = 0
+		if len(entries) == 0 {
+			m.activeCursor = -1
+		}
+	}
+	m.activeScroll = 0
+	m.clampScroll()
+	m.statusErr = ""
+	m.exitFindMode()
 }
 
 // handleSearchKey processes one key while searchMode is true (spec §4).

@@ -26,16 +26,36 @@ type Model struct {
 	searchNoMatch    bool
 	searchPrevCursor int
 	// helpMode: in-app help screen state (? toggles it open/closed; see
-	// internal/tui/help.go). Mutually exclusive with searchMode — Update's
-	// early-return dispatch order guarantees only one is ever active.
+	// internal/tui/help.go). Mutually exclusive with searchMode/findMode/
+	// markSetPending/markJumpPending/marksListMode — Update's early-return
+	// dispatch order guarantees only one is ever active.
 	helpMode bool
+	// findMode/findQuery/findResults/findCursor/findScroll/findTruncated:
+	// recursive find state (spec
+	// docs/superpowers/specs/2026-08-16-thicket-recursive-find-design.md).
+	// Zero-valued at construction, same as searchMode/helpMode. findResults
+	// is captured once when f is pressed and held for the session; it is
+	// never re-walked while findMode is true, only re-filtered via
+	// filterWalk. findScroll persists the result-list scroll offset the
+	// same way activeScroll does for the Miller column (see clampScroll/
+	// clampFindScroll in update.go) — findCursor is user-driven, unlike
+	// scrollStartFor's pin-to-bottom behavior used by the derived
+	// ancestor/preview columns. Mutually exclusive with searchMode/
+	// helpMode/markSetPending/markJumpPending/marksListMode — Update's
+	// early-return dispatch order guarantees only one mode is ever active.
+	findMode      bool
+	findQuery     string
+	findResults   []fsutil.WalkEntry
+	findCursor    int // index into filterWalk(findResults, findQuery); -1 when that view is empty
+	findScroll    int // scroll window start into filterWalk(findResults, findQuery); see clampFindScroll
+	findTruncated bool
 	// markTable/marksPath/markSetPending/markJumpPending/marksListMode/
 	// marksCursor: directory marks (bookmarks) state (spec
 	// docs/superpowers/specs/2026-08-16-thicket-directory-marks-design.md
 	// §4). markTable and marksPath are populated once in New(); the rest
 	// are zero-valued at construction, same as searchMode/helpMode.
 	// markSetPending/markJumpPending/marksListMode are mutually exclusive
-	// with each other and with searchMode/helpMode — Update's early-return
+	// with each other and with searchMode/helpMode/findMode — Update's
 	// dispatch order guarantees only one mode is ever active. The field is
 	// named markTable, not marks, to avoid colliding with the marksPkg
 	// import alias used throughout this package.

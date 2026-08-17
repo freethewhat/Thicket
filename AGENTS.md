@@ -10,11 +10,13 @@ program's stdout. Module path: `thicket` (unpublished, local module).
 v1 scope is intentionally locked to navigation only — no file
 create/rename/delete/copy/move, no config file, no mouse support, no
 filesystem watching (see `docs/superpowers/specs/2026-08-15-thicket-tui-file-browser-design.md`
-§3). Two amendments to that non-goal list have shipped since: a
+§3). Three amendments to that non-goal list have shipped since: a
 `/`-triggered type-ahead cursor search within the active column
 (`docs/superpowers/specs/2026-08-16-thicket-type-ahead-search-design.md`),
-and vim/ranger-style directory marks/bookmarks
-(`docs/superpowers/specs/2026-08-16-thicket-directory-marks-design.md`).
+vim/ranger-style directory marks/bookmarks
+(`docs/superpowers/specs/2026-08-16-thicket-directory-marks-design.md`),
+and an `f`-triggered recursive find over the active directory's subtree
+(`docs/superpowers/specs/2026-08-16-thicket-recursive-find-design.md`).
 Every other v1 non-goal in §3 still holds.
 
 ## Architecture & Data Flow
@@ -33,7 +35,11 @@ on `internal/fsutil` and `internal/marks`:
    devices, sockets) are reported via `Special: true` *without* ever
    calling `os.Open` — opening a FIFO with no writer blocks indefinitely,
    which would freeze the whole TUI since preview reads run inline on the
-   Bubble Tea event loop. No caching, no state.
+   Bubble Tea event loop. `WalkSubtree(dir, showHidden) ([]WalkEntry, bool, error)`
+   recursively walks a directory's subtree for the `f` recursive-find
+   command, capped at 12 levels of depth and 20000 entries, never
+   descending into symlinked directories, and silently skipping
+   permission-denied subdirectories. No caching, no state.
 2. **`internal/marks`** — pure disk I/O for directory marks (bookmarks): a
    `letter -> absolute-path` table persisted as sorted `letter\tpath\n`
    lines. `Load(path)`/`Save(path, m)` mirror `fsutil`'s per-entry error
@@ -50,9 +56,12 @@ on `internal/fsutil` and `internal/marks`:
    errors set `statusErr` on the model rather than quitting. `render.go`
    implements `View()`, laying out ancestor/active/preview panes with
    lipgloss, adapting column count to terminal width (active-only below
-   ~30 cols, min 15 cols/column). All I/O runs synchronously inside
-   `Update`/`View` on the Bubble Tea event loop — **no goroutines, channels,
-   or `tea.Cmd` async work**.
+   ~30 cols, min 15 cols/column); it also swaps in full-screen views —
+   replacing the column layout entirely rather than overlaying it — for
+   the `?` help screen, the `'` marks list, and the `f` recursive-find
+   result list when their respective mode flags are set. All I/O runs
+   synchronously inside `Update`/`View` on the Bubble Tea event loop —
+   **no goroutines, channels, or `tea.Cmd` async work**.
 4. **`cmd/thicket`** — process entry point and terminal wiring
    (`cmd/thicket/main.go`). Opens `/dev/tty` directly (`os.OpenFile("/dev/tty", ...)`)
    for TUI input/output so the program still gets a real terminal even
@@ -80,7 +89,8 @@ th (shell function) → thicket binary (/dev/tty for UI) → stdout: chosen path
                   ▼             ▼
         internal/fsutil   internal/marks (Load,
         (ListDir,          Save, DefaultPath)
-         ReadFilePreview)
+         ReadFilePreview,
+         WalkSubtree)
 ```
 
 ## Key Directories

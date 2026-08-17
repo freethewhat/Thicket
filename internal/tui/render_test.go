@@ -561,7 +561,7 @@ func TestView_StatusLineMarksListSurfacesStatusErr(t *testing.T) {
 func TestView_HelpScreenStaysWithinPaneHeight(t *testing.T) {
 	root := setupFixture(t)
 	m := newTestModel(t, root)
-	m.height = 12 // visibleRows() (8) < len(Keybindings)+2 (18)
+	m.height = 12 // visibleRows() (8) < len(Keybindings)+2 (19)
 	m.width = 100
 	m.helpMode = true
 
@@ -570,5 +570,180 @@ func TestView_HelpScreenStaysWithinPaneHeight(t *testing.T) {
 	lines := strings.Split(out, "\n")
 	if len(lines) != m.height {
 		t.Fatalf("View() produced %d lines, want exactly m.height (%d):\n%s", len(lines), m.height, out)
+	}
+}
+
+func TestView_FindModeShowsFullScreenResultList(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	out := m.View()
+
+	if !strings.Contains(out, filepath.Join("sub", "leaf.txt")) {
+		t.Fatalf("View() missing walked result:\n%s", out)
+	}
+	if strings.Contains(out, "↑/k ↓/j move · PgUp/PgDn page") {
+		t.Fatal("expected column layout's normal hints replaced while findMode is true")
+	}
+}
+
+func TestView_FindModeShowsNoMatches(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("zzzznomatch")})
+	m = updated.(Model)
+
+	out := m.View()
+
+	if !strings.Contains(out, "no matches") {
+		t.Fatalf("View() missing 'no matches':\n%s", out)
+	}
+}
+
+func TestView_FindModeShowsTruncatedIndicator(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.findMode = true
+	m.findResults = []fsutil.WalkEntry{{Entry: fsutil.Entry{Name: "a"}, RelPath: "a"}}
+	m.findCursor = 0
+	m.findTruncated = true
+
+	out := m.View()
+
+	if !strings.Contains(out, "truncated") {
+		t.Fatalf("View() missing truncated indicator:\n%s", out)
+	}
+}
+
+func TestView_FindModeHighlightsCursorRow(t *testing.T) {
+	restoreColorProfile(t)
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.findMode = true
+	m.findResults = []fsutil.WalkEntry{
+		{Entry: fsutil.Entry{Name: "a"}, RelPath: "a"},
+		{Entry: fsutil.Entry{Name: "b"}, RelPath: "b"},
+	}
+	m.findCursor = 1
+
+	out := m.renderFind(m.visibleRows())
+
+	want := selectedStyle.Render(truncate("b", m.width-paneBorderWidth))
+	if !strings.Contains(out, want) {
+		t.Fatalf("renderFind() missing highlighted row:\n%s\nwant substring:\n%s", out, want)
+	}
+}
+
+func TestView_StatusLineShowsFindPromptAndMatchCount(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("leaf")})
+	m = updated.(Model)
+
+	got := m.statusLine()
+
+	if !strings.Contains(got, "find/leaf") {
+		t.Fatalf("statusLine() missing find prompt: %q", got)
+	}
+	if !strings.Contains(got, "(1)") {
+		t.Fatalf("statusLine() missing match count: %q", got)
+	}
+}
+
+func TestView_StatusLineFindHintDiscoverable(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 200
+
+	if !strings.Contains(m.statusLine(), "f find") {
+		t.Fatalf("statusLine() missing 'f find' hint: %q", m.statusLine())
+	}
+}
+
+// TestView_FindModeSymlinkAtFullWidthDoesNotPushOutNextEntry covers a
+// review defect: renderFind must reserve a width cell for the symlink '@'
+// suffix before truncating RelPath, same as renderColumn's
+// reservedForSymlink. Without it, a symlink whose RelPath reaches the full
+// pane width overflows to width+1 display cells, soft-wrapping that row
+// and pushing later entries out of the MaxHeight-clipped view.
+func TestView_FindModeSymlinkAtFullWidthDoesNotPushOutNextEntry(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 20
+	m.height = 6 // visibleRows() == 2
+	m.findMode = true
+	width := m.width - paneBorderWidth
+	m.findResults = []fsutil.WalkEntry{
+		{Entry: fsutil.Entry{Name: "link", IsSymlink: true}, RelPath: strings.Repeat("x", width)},
+		{Entry: fsutil.Entry{Name: "nextentry"}, RelPath: "nextentry"},
+	}
+	m.findCursor = 0
+
+	out := m.renderFind(m.visibleRows())
+
+	if !strings.Contains(out, "nextentry") {
+		t.Fatalf("symlink at full pane width pushed the next entry out of view:\n%s", out)
+	}
+}
+
+// TestView_FindModeScrollsToKeepCursorVisible covers a review defect:
+// findCursor is clamped against the full filtered result list (up to the
+// walk cap, far larger than the visible rows), so renderFind must track
+// it with a persisted, user-driven scroll window (m.findScroll, advanced
+// via moveFindCursor/clampFindScroll) instead of always rendering from
+// index 0.
+func TestView_FindModeScrollsToKeepCursorVisible(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.height = 7 // visibleRows() == 3
+	m.width = 100
+	m.findMode = true
+	entries := make([]fsutil.WalkEntry, 10)
+	for i := range entries {
+		name := fmt.Sprintf("n%02d", i)
+		entries[i] = fsutil.WalkEntry{Entry: fsutil.Entry{Name: name}, RelPath: name}
+	}
+	m.findResults = entries
+	m.moveFindCursor(9) // 0 -> 9, clamping findScroll along the way
+
+	out := m.renderFind(m.visibleRows())
+
+	if !strings.Contains(out, "n09") {
+		t.Fatalf("expected cursor entry n09 visible after scrolling:\n%s", out)
+	}
+}
+
+// TestView_FindModeSingleRowPaneWithTruncatedStillShowsEntry covers a
+// review defect introduced by the cursor-scrolling fix: reserving a
+// bottom row for the truncated indicator whenever entryRows > 0 could
+// drive entryRows to 0 in a 1-row-tall pane, making scrollStartFor return
+// an out-of-range start and rendering nothing but the truncated
+// indicator — worse than before, since not even one match/cursor row was
+// visible. The indicator must be dropped in favor of showing at least one
+// entry when the pane is that small.
+func TestView_FindModeSingleRowPaneWithTruncatedStillShowsEntry(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.height = 5 // visibleRows() == 1
+	m.width = 100
+	m.findMode = true
+	m.findResults = []fsutil.WalkEntry{
+		{Entry: fsutil.Entry{Name: "n00"}, RelPath: "n00"},
+		{Entry: fsutil.Entry{Name: "n01"}, RelPath: "n01"},
+	}
+	m.findCursor = 0
+	m.findTruncated = true
+
+	out := m.renderFind(m.visibleRows())
+
+	if !strings.Contains(out, "n00") {
+		t.Fatalf("expected the cursor's entry visible in a 1-row truncated find pane, got only the truncated indicator:\n%s", out)
 	}
 }

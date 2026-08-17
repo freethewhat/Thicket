@@ -80,6 +80,9 @@ func (m Model) View() string {
 	if m.marksListMode {
 		return header + "\n" + m.renderMarksList(rows) + "\n" + m.statusLine()
 	}
+	if m.findMode {
+		return header + "\n" + m.renderFind(rows) + "\n" + m.statusLine()
+	}
 	cols := m.buildColumns(rows)
 
 	colWidth := m.width/len(cols) - paneBorderWidth
@@ -260,7 +263,7 @@ func renderColumn(c column, width, rows int) string {
 }
 
 func (m Model) statusLine() string {
-	hints := "↑/k ↓/j move · PgUp/PgDn page · Home/End top/bottom · →/l open · ←/h up · Enter cd+exit · . hidden · r refresh · / search · ? help · q quit · m mark · ` jump · ' marks"
+	hints := "↑/k ↓/j move · PgUp/PgDn page · Home/End top/bottom · →/l open · ←/h up · Enter cd+exit · . hidden · r refresh · / search · f find · ? help · q quit · m mark · ` jump · ' marks"
 	left := hints
 	right := m.activePath
 	isErr := m.statusErr != ""
@@ -292,6 +295,11 @@ func (m Model) statusLine() string {
 		// activateMarksListEntry can set statusErr and deliberately stay
 		// in marksListMode, and that error must still surface.
 		left = "↑/k ↓/j move · enter jump · d delete · q/esc close"
+	} else if m.findMode {
+		filtered := filterWalk(m.findResults, m.findQuery)
+		left = fmt.Sprintf("find/%s (%d)", m.findQuery, len(filtered))
+		right = m.activePath
+		isErr = false
 	}
 	return composeStatusLine(left, right, isErr, m.width)
 }
@@ -364,4 +372,81 @@ func (m Model) renderMarksList(rows int) string {
 	}
 	inner := lipgloss.NewStyle().Width(width).Height(rows).MaxHeight(rows).Render(content)
 	return activePaneStyle.Render(inner)
+}
+
+// renderFind draws the full-screen recursive-find result list shown while
+// Model.findMode is true (spec §7). Full-screen replacement, mirroring
+// renderMarksList/renderHelp.
+func (m Model) renderFind(rows int) string {
+	width := m.width - paneBorderWidth
+	if width < 0 {
+		width = 0
+	}
+	filtered := filterWalk(m.findResults, m.findQuery)
+
+	var lines []string
+	if len(filtered) == 0 {
+		lines = []string{"no matches"}
+	} else {
+		// One row is reserved at the bottom for the truncated indicator
+		// when present, so the scrolling window below sizes itself to
+		// the remaining entry rows rather than the full pane height.
+		entryRows := m.findEntryRows(rows)
+		// findCursor indexes into the full filtered list (up to the walk
+		// cap), which can be far larger than entryRows. Unlike
+		// buildAncestors/buildPreview's scrollStartFor (which has no
+		// user-driven cursor and pins the highlight to the bottom row),
+		// find mode's cursor is user-driven, so the window start is the
+		// persisted, incrementally-clamped m.findScroll (see
+		// clampFindScroll in update.go) rather than recomputed here.
+		start := m.findScroll
+		end := start + entryRows
+		if end > len(filtered) {
+			end = len(filtered)
+		}
+		if start > end {
+			start = end
+		}
+		window := filtered[start:end]
+		lines = make([]string, len(window))
+		for i, we := range window {
+			// Reserve a width cell for the symlink '@' suffix before
+			// truncating, same as renderColumn's reservedForSymlink —
+			// otherwise a RelPath reaching the full pane width plus '@'
+			// overflows to width+1 cells and soft-wraps the row.
+			nameWidth := width
+			if we.IsSymlink {
+				nameWidth--
+			}
+			text := truncate(we.RelPath, nameWidth)
+			if we.IsDir {
+				text = dirStyle.Render(text)
+			}
+			if we.IsSymlink {
+				text += symlinkStyle.Render("@")
+			}
+			if start+i == m.findCursor {
+				text = selectedStyle.Render(text)
+			}
+			lines[i] = text
+		}
+	}
+	if m.findTruncated {
+		lines = append(lines, "… truncated, refine your query")
+	}
+	content := strings.Join(lines, "\n")
+	inner := lipgloss.NewStyle().Width(width).Height(rows).MaxHeight(rows).Render(content)
+	return activePaneStyle.Render(inner)
+}
+
+// findEntryRows returns how many of rows rows are available for find
+// result entries: one is reserved at the bottom for the truncated
+// indicator when findTruncated is set (and rows leaves at least one row
+// left over for an entry). Shared between renderFind's window sizing and
+// update.go's clampFindScroll so the two always agree on window size.
+func (m Model) findEntryRows(rows int) int {
+	if m.findTruncated && rows > 1 {
+		return rows - 1
+	}
+	return rows
 }
