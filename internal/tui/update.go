@@ -216,11 +216,21 @@ func (m *Model) handleLeft() {
 func (m *Model) handleEnter() {
 	m.quitting = true
 	m.selected = true
+	m.chosenPath = m.selectedDirPath()
+}
+
+// selectedDirPath returns the directory the cursor is highlighting: the
+// entry under activeCursor when it's a directory (matching what the
+// preview column shows), otherwise activePath itself (cursor on a file,
+// or the active directory is empty). Shared by handleEnter (Enter picks
+// this path) and handleMarkSetKey (m<letter> bookmarks this path) so
+// both agree with what's visually highlighted rather than the listing
+// one level up.
+func (m *Model) selectedDirPath() string {
 	if m.activeCursor >= 0 && m.activeCursor < len(m.activeEntries) && m.activeEntries[m.activeCursor].IsDir {
-		m.chosenPath = filepath.Join(m.activePath, m.activeEntries[m.activeCursor].Name)
-		return
+		return filepath.Join(m.activePath, m.activeEntries[m.activeCursor].Name)
 	}
-	m.chosenPath = m.activePath
+	return m.activePath
 }
 
 // enterSearchMode opens the type-ahead search prompt (spec §4). It never
@@ -330,7 +340,7 @@ func (m *Model) handleMarkSetKey(msg tea.KeyMsg) {
 	if !ok {
 		return
 	}
-	m.markTable[r] = m.activePath
+	m.markTable[r] = m.selectedDirPath()
 	if err := marksPkg.Save(m.marksPath, m.markTable); err != nil {
 		m.statusErr = err.Error()
 		return

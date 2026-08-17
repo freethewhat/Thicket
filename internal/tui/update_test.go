@@ -1046,6 +1046,10 @@ func TestUpdate_MSetsMarkSetPending(t *testing.T) {
 func TestUpdate_MarkSetPendingLetterSavesMarkAndClearsPending(t *testing.T) {
 	root := setupFixture(t)
 	m := newTestModel(t, root)
+	// Move cursor off the leading "sub" directory onto "file.txt" so this
+	// test isolates the activePath-fallback branch of selectedDirPath;
+	// the cursor-on-a-directory branch is covered separately below.
+	m.activeCursor = fsutil.IndexOfName(m.activeEntries, "file.txt")
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
 	m = updated.(Model)
@@ -1064,6 +1068,29 @@ func TestUpdate_MarkSetPendingLetterSavesMarkAndClearsPending(t *testing.T) {
 	}
 	if saved['a'] != root {
 		t.Fatalf("persisted mark['a'] = %q, want %q", saved['a'], root)
+	}
+}
+
+// TestUpdate_MarkSetBookmarksHighlightedDirectoryNotActivePath guards
+// against regressing to bookmarking the listing one level up: with the
+// cursor left on its default position (the first entry, "sub" — a
+// directory), m<letter> must mark root/sub, the directory the cursor and
+// preview column are highlighting, not root itself.
+func TestUpdate_MarkSetBookmarksHighlightedDirectoryNotActivePath(t *testing.T) {
+	root := setupFixture(t)
+	sub := filepath.Join(root, "sub")
+	m := newTestModel(t, root)
+	if m.activeEntries[m.activeCursor].Name != "sub" {
+		t.Fatalf("precondition: cursor on %q, want \"sub\"", m.activeEntries[m.activeCursor].Name)
+	}
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+
+	if m.markTable['a'] != sub {
+		t.Fatalf("markTable['a'] = %q, want %q", m.markTable['a'], sub)
 	}
 }
 
@@ -1087,16 +1114,17 @@ func TestUpdate_MarkSetPendingNonLetterCancelsWithoutMutation(t *testing.T) {
 func TestUpdate_MarkSetOverwritesExistingLetterSilently(t *testing.T) {
 	root := setupFixture(t)
 	sub := filepath.Join(root, "sub")
+	grand := filepath.Join(sub, "grand")
 	m := newTestModel(t, root)
-	m.markTable['a'] = sub // pre-existing mark
+	m.markTable['a'] = grand // pre-existing mark, distinct from the cursor's default target (sub)
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
 	m = updated.(Model)
 	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
 	m = updated.(Model)
 
-	if m.markTable['a'] != root {
-		t.Fatalf("markTable['a'] = %q, want overwritten to %q", m.markTable['a'], root)
+	if m.markTable['a'] != sub {
+		t.Fatalf("markTable['a'] = %q, want overwritten to %q", m.markTable['a'], sub)
 	}
 }
 
