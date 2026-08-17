@@ -12,12 +12,20 @@ import (
 	"thicket/internal/tui"
 )
 
+// version is set at build time via
+// -ldflags "-X main.version=vX.Y.Z" (see .goreleaser.yaml). Source builds
+// (go build/go run without ldflags) report "dev".
+var version = "dev"
+
 func main() {
 	start := "."
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "-h", "--help":
 			fmt.Print(helpText())
+			return
+		case "-v", "--version":
+			fmt.Printf("thicket %s\n", version)
 			return
 		default:
 			start = os.Args[1]
@@ -89,7 +97,8 @@ func helpText() string {
 	b.WriteString("thicket - Miller-column TUI file browser for the terminal\n\n")
 	b.WriteString("Usage:\n")
 	b.WriteString("  thicket [path]\n")
-	b.WriteString("  thicket -h | --help\n\n")
+	b.WriteString("  thicket -h | --help\n")
+	b.WriteString("  thicket -v | --version\n\n")
 	b.WriteString("Arguments:\n")
 	b.WriteString("  path    Directory to start browsing in (default: current directory)\n\n")
 	b.WriteString("Keys:\n")
