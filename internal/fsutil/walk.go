@@ -1,4 +1,3 @@
-// internal/fsutil/walk.go
 package fsutil
 
 import (
@@ -42,6 +41,7 @@ func WalkSubtree(root string, showHidden bool) ([]WalkEntry, bool, error) {
 
 	var results []WalkEntry
 	truncated := false
+	var stopped bool
 
 	var walk func(dirEntries []os.DirEntry, dir, relDir string, depth int)
 	walk = func(dirEntries []os.DirEntry, dir, relDir string, depth int) {
@@ -58,10 +58,11 @@ func WalkSubtree(root string, showHidden bool) ([]WalkEntry, bool, error) {
 		})
 
 		for _, name := range names {
-			if truncated {
+			if stopped {
 				return
 			}
 			if len(results) >= walkMaxEntries {
+				stopped = true
 				truncated = true
 				return
 			}
@@ -72,15 +73,17 @@ func WalkSubtree(root string, showHidden bool) ([]WalkEntry, bool, error) {
 			}
 			results = append(results, WalkEntry{Entry: e, RelPath: relPath})
 
-			if e.IsDir && !e.IsSymlink && depth < walkMaxDepth {
-				childDir := filepath.Join(dir, name)
-				childEntries, err := os.ReadDir(childDir)
-				if err != nil {
-					continue // permission-denied subdir: skip silently
+			if e.IsDir && !e.IsSymlink {
+				if depth < walkMaxDepth {
+					childDir := filepath.Join(dir, name)
+					childEntries, err := os.ReadDir(childDir)
+					if err != nil {
+						continue // permission-denied subdir: skip silently
+					}
+					walk(childEntries, childDir, relPath, depth+1)
+				} else {
+					truncated = true
 				}
-				walk(childEntries, childDir, relPath, depth+1)
-			} else if e.IsDir && !e.IsSymlink && depth >= walkMaxDepth {
-				truncated = true
 			}
 		}
 	}

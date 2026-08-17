@@ -1,4 +1,3 @@
-// internal/fsutil/walk_test.go
 package fsutil_test
 
 import (
@@ -10,7 +9,7 @@ import (
 	"thicket/internal/fsutil"
 )
 
-// walkFixture builds:
+// walkFixture builds a minimal file tree for walk tests:
 //
 //	root/
 //	  sub/
@@ -19,8 +18,8 @@ import (
 //	    leaf.txt
 //	  file.txt
 //	  .hidden
-//	  denied/        (chmod 0o000)
-//	  link -> sub     (symlink to a directory)
+//
+// (Additional test-specific structures like denied/ and symlink link
 func walkFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -230,5 +229,47 @@ func TestWalkSubtree_ErrorsOnUnreadableRoot(t *testing.T) {
 	_, _, err := fsutil.WalkSubtree(filepath.Join(t.TempDir(), "does-not-exist"), false)
 	if err == nil {
 		t.Fatal("expected an error for an unreadable root")
+	}
+}
+
+func TestWalkSubtree_SiblingsSurviveDepthCap(t *testing.T) {
+	root := t.TempDir()
+
+	// Create a deep chain (20 levels, past walkMaxDepth)
+	deepDir := root
+	for i := 0; i < 20; i++ {
+		deepDir = filepath.Join(deepDir, "d")
+		mustMkdir(t, deepDir)
+	}
+
+	// Create sibling files at root and mid-level that should be visited
+	mustWriteFile(t, filepath.Join(root, "root_file.txt"), "hi")
+	mustWriteFile(t, filepath.Join(root, "d", "mid_file.txt"), "hi")
+
+	entries, truncated, err := fsutil.WalkSubtree(root, false)
+	if err != nil {
+		t.Fatalf("WalkSubtree: %v", err)
+	}
+
+	// Should be truncated because we hit depth cap
+	if !truncated {
+		t.Fatal("expected truncated == true for a tree deeper than walkMaxDepth")
+	}
+
+	// Verify siblings are present despite the depth cap
+	var foundRoot, foundMid bool
+	for _, e := range entries {
+		if e.RelPath == "root_file.txt" {
+			foundRoot = true
+		}
+		if e.RelPath == filepath.Join("d", "mid_file.txt") {
+			foundMid = true
+		}
+	}
+	if !foundRoot {
+		t.Fatal("expected root_file.txt to be present despite depth cap on deep chain")
+	}
+	if !foundMid {
+		t.Fatal("expected mid_file.txt to be present despite depth cap on deep chain")
 	}
 }
