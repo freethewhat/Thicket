@@ -2,7 +2,6 @@ package tui
 
 import (
 	"path/filepath"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"thicket/internal/fsutil"
@@ -95,7 +94,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case updateAvailableMsg:
 		m.updateNotice = updateNoticeText(msg.tag)
-		return m, tea.Tick(updateNoticeDuration, func(time.Time) tea.Msg { return clearUpdateNoticeMsg{} })
+		return m, dismissNoticeCmd(updateNoticeDuration)
 	case clearUpdateNoticeMsg:
 		m.updateNotice = ""
 	}

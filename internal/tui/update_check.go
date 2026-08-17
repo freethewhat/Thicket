@@ -49,6 +49,14 @@ func checkUpdateCmd(current string) tea.Cmd {
 	}
 }
 
+// dismissNoticeCmd returns a tea.Cmd that delivers clearUpdateNoticeMsg
+// after d elapses, via tea.Tick. Extracted from the updateAvailableMsg
+// case in update.go so tests can schedule a short dismissal instead of
+// blocking on the real updateNoticeDuration.
+func dismissNoticeCmd(d time.Duration) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg { return clearUpdateNoticeMsg{} })
+}
+
 // updateNoticeText formats the toast shown in the status line's right
 // slot when updateAvailableMsg arrives.
 func updateNoticeText(tag string) string {

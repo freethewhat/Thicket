@@ -4,8 +4,6 @@ import (
 	"context"
 	"testing"
 	"time"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // withStubLatestTag replaces latestTagFunc for the duration of the test
@@ -98,9 +96,18 @@ func TestUpdate_UpdateAvailableMsgSetsNoticeAndSchedulesDismiss(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Update(updateAvailableMsg{...}): want non-nil tea.Cmd (the dismiss tea.Tick)")
 	}
-	msg := cmd()
+}
+
+func TestUpdateNoticeDuration_IsFiveSeconds(t *testing.T) {
+	if updateNoticeDuration != 5*time.Second {
+		t.Errorf("updateNoticeDuration = %s, want 5s", updateNoticeDuration)
+	}
+}
+
+func TestDismissNoticeCmd_ProducesClearUpdateNoticeMsgAfterDuration(t *testing.T) {
+	msg := dismissNoticeCmd(time.Millisecond)()
 	if _, ok := msg.(clearUpdateNoticeMsg); !ok {
-		t.Fatalf("scheduled tea.Cmd produced %#v, want clearUpdateNoticeMsg (after waiting up to %s)", msg, updateNoticeDuration)
+		t.Fatalf("dismissNoticeCmd(...)() = %#v, want clearUpdateNoticeMsg", msg)
 	}
 }
 
@@ -122,6 +129,3 @@ var errFakeNetwork = errFake{"network unreachable"}
 type errFake struct{ msg string }
 
 func (e errFake) Error() string { return e.msg }
-
-var _ = time.Second // silence unused import if trimmed later; remove if time is used elsewhere in this file
-var _ tea.Msg
