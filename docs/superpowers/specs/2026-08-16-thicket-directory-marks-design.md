@@ -60,8 +60,11 @@ type Marks map[rune]string
 // (e.g. permission denied on an existing file) is returned to the caller.
 func Load(path string) (Marks, error)
 
-// Save writes m to path as sorted `letter\tpath\n` lines (sorted by letter
-// for deterministic file content/diffs and simpler testing). Creates the
+// Save writes m to path as sorted `letter\tpath\n` lines — lowercase
+// letters before uppercase, alphabetical within each case (vim/ranger's
+// `:marks` convention; NOT plain ascending rune order, since 'A' (65) <
+// 'a' (97) in ASCII — ascending-rune sort would put A-Z first). Sorted
+// for deterministic file content/diffs and simpler testing. Creates the
 // parent directory (mode 0o700) if absent.
 func Save(path string, m Marks) error
 
@@ -71,10 +74,15 @@ func DefaultPath() (string, error)
 ```
 
 - **File format:** one `letter\tpath` line per mark, `\n`-terminated,
-  written in ascending letter order (`a`-`z` then `A`-`Z`, matching Go's
-  natural rune ordering). Chosen over JSON/TOML for hand-editability and
-  because the schema (one rune, one path, no nesting) doesn't benefit from
-  a structured format.
+  written lowercase-before-uppercase (see `Save`'s doc comment above —
+  this is a custom comparator, not Go's default ascending-rune sort).
+  Chosen over JSON/TOML for hand-editability and because the schema (one
+  rune, one path, no nesting) doesn't benefit from a structured format.
+  Directory paths containing an embedded tab or newline byte (legal but
+  vanishingly rare on Linux) will not round-trip correctly — `Load` skips
+  the resulting malformed line silently, same as any other corrupt line.
+  Accepted as an unsupported edge case; not worth a structured/escaped
+  format for a 52-slot letter table.
 - **Load semantics:** `os.ReadFile` returning `os.IsNotExist` → empty
   `Marks{}`, `nil` error. Any other `ReadFile` error (permission denied,
   I/O error) → returned as-is. Per-line parsing: split on `\t`; a line that
@@ -93,7 +101,7 @@ func DefaultPath() (string, error)
 ## 4. Model changes (`internal/tui/model.go`)
 
 ```go
-marks           marksPkg.Marks // loaded once in New(); mutated in place
+markTable       marksPkg.Marks // loaded once in New(); mutated in place
 marksPath       string         // where Save() writes; set once in New()
 markSetPending  bool           // true after `m`, awaiting a letter
 markJumpPending bool           // true after `, awaiting a letter
@@ -101,13 +109,12 @@ marksListMode   bool           // true while the full-screen marks list is open
 marksCursor     int            // cursor row within the marks list; -1 when empty
 ```
 
-(`marksPkg` avoids a name collision with the `marks` field — the import is
-aliased `marksPkg "thicket/internal/marks"` in code, or the field is
-renamed `markTable`; final naming is an implementation-plan detail, not a
-spec-level decision.)
+(Field is named `markTable`, not `marks`, to avoid colliding with the
+`marksPkg "thicket/internal/marks"` import alias used throughout this
+package. Decided here, not deferred to the implementation plan.)
 
-All five fields are zero-valued/absent at construction except `marks` and
-`marksPath`, which `New()` populates:
+All five fields are zero-valued/absent at construction except `markTable`
+and `marksPath`, which `New()` populates:
 
 ```go
 func New(startPath, marksPath string) (Model, error) {
@@ -117,7 +124,7 @@ func New(startPath, marksPath string) (Model, error) {
     if err != nil {
         return Model{}, err
     }
-    m.marks = loaded
+    m.markTable = loaded
     m.marksCursor = marksListCursorFor(loaded) // 0 if non-empty, -1 if empty
     return m, nil
 }
@@ -127,8 +134,12 @@ func New(startPath, marksPath string) (Model, error) {
 `New(startPath, marksPath string)`. The only caller is `cmd/thicket/main.go`,
 which computes `marksPath` via `marks.DefaultPath()` before calling `tui.New`
 (and exits 2 on a `DefaultPath` error, same pattern as the existing tty-open
-and `tui.New` error paths). Tests call `tui.New(tempDir, filepath.Join(t.TempDir(), "marks"))`
-directly, giving `internal/tui`'s test suite a real, isolated file per test
+and `tui.New` error paths). `internal/tui`'s test suite has one shared
+constructor helper, `newTestModel(t, path)` (`update_test.go`), used by
+most tests, plus ~8 call sites that bypass it and call `New` directly
+(`update_test.go` and `render_test.go`) — both `newTestModel` and every
+direct call site need the new `marksPath` argument, each pointed at
+`filepath.Join(t.TempDir(), "marks")` for a real, isolated file per test
 with no `$XDG_STATE_HOME` environment coupling.
 
 A `Load` error (e.g. an existing-but-permission-denied marks file) fails
@@ -165,7 +176,7 @@ already documented for `helpMode`/`searchMode` in `model.go`.
   code path given dispatch order, but stated for clarity).
 - `` ` `` (backtick): `markJumpPending = true`.
 - `'`: `marksListMode = true`; `marksCursor` recomputed via
-  `marksListCursorFor(m.marks)` (0 if non-empty, `-1` if empty — mirrors
+  `marksListCursorFor(m.markTable)` (0 if non-empty, `-1` if empty — mirrors
   `activeCursor`'s `-1`-when-empty convention).
 
 **While `markSetPending` is true**, every key is consumed by this branch
@@ -173,15 +184,15 @@ already documented for `helpMode`/`searchMode` in `model.go`.
 
 | Key | Effect |
 |---|---|
-| `tea.KeyRunes`, exactly one rune in `a`-`z`/`A`-`Z` | `m.marks[rune] = m.activePath`; `marks.Save(m.marksPath, m.marks)` — on error, set `statusErr`, keep the in-memory entry; clear `markSetPending`. |
+| `tea.KeyRunes`, exactly one rune in `a`-`z`/`A`-`Z` | `m.markTable[rune] = m.activePath`; `marks.Save(m.marksPath, m.markTable)` — on error, set `statusErr`, keep the in-memory entry; clear `markSetPending`. |
 | Anything else (including Esc, multi-rune paste, digits, punctuation) | Cancel: clear `markSetPending`, no mutation. |
 
 **While `markJumpPending` is true**, same total-consumption rule:
 
 | Key | Effect |
 |---|---|
-| `tea.KeyRunes`, exactly one rune in `a`-`z`/`A`-`Z`, present in `m.marks` | `target := m.marks[rune]`; attempt `fsutil.ListDir(target, m.showHidden)`. Success: `activePath = target`, `activeEntries` = result, `activeCursor = 0` (or `-1` if empty), `activeScroll = 0`, `statusErr` cleared. Failure (directory deleted/permission-changed since marking): `activePath` unchanged, `statusErr = "mark " + string(rune) + ": " + err.Error()` — same shape as `handleRight`'s permission-denied handling. Clear `markJumpPending` either way. |
-| `tea.KeyRunes`, exactly one rune in `a`-`z`/`A`-`Z`, absent from `m.marks` | `statusErr = "no mark: " + string(rune)`; clear `markJumpPending`. |
+| `tea.KeyRunes`, exactly one rune in `a`-`z`/`A`-`Z`, present in `m.markTable` | `target := m.markTable[rune]`; attempt `fsutil.ListDir(target, m.showHidden)`. Success: `activePath = target`, `activeEntries` = result, `activeCursor = 0` (or `-1` if empty), `activeScroll = 0`, `statusErr` cleared. Failure (directory deleted/permission-changed since marking): `activePath` unchanged, `statusErr = "mark " + string(rune) + ": " + err.Error()` — same shape as `handleRight`'s permission-denied handling. Clear `markJumpPending` either way. |
+| `tea.KeyRunes`, exactly one rune in `a`-`z`/`A`-`Z`, absent from `m.markTable` | `statusErr = "no mark: " + string(rune)`; clear `markJumpPending`. |
 | Anything else | Cancel: clear `markJumpPending`, no mutation, `statusErr` untouched. |
 
 **While `marksListMode` is true:**
@@ -191,7 +202,7 @@ already documented for `helpMode`/`searchMode` in `model.go`.
 | `up`, `k` | `marksCursor` moves -1, clamped to `[0, len(sortedMarks)-1]` (no-op if `-1`/empty). |
 | `down`, `j` | `marksCursor` moves +1, same clamping. |
 | `enter` | If `marksCursor >= 0`: jump to that mark's directory using the exact same success/failure logic as the `markJumpPending` table above (`ListDir` success → move + clear mode; failure → `statusErr`, stay in `marksListMode` so the user sees the error against the list rather than getting silently bounced to a blank normal-mode screen). If `marksCursor == -1` (empty list): no-op. |
-| `d` | If `marksCursor >= 0`: delete that letter from `m.marks`, `marks.Save`, recompute the sorted list, clamp `marksCursor` to the new (possibly shorter) length, or `-1` if now empty. |
+| `d` | If `marksCursor >= 0`: delete that letter from `m.markTable`, `marks.Save(m.marksPath, m.markTable)`. On `Save` error: set `statusErr`, keep the deletion in memory (same disk/memory-diverges tradeoff as the `markSetPending` save-error case above), and skip the recompute/clamp below so the cursor stays put and the user can see the error. On success: clear `statusErr`, recompute the sorted list, clamp `marksCursor` to the new (possibly shorter) length, or `-1` if now empty. |
 | `q`, `esc` | `marksListMode = false`. No mutation. |
 | Everything else | No-op (explicit catch-all, mirrors `handleSearchKey`'s documented "Go's switch already does nothing" pattern). |
 
@@ -205,8 +216,11 @@ Pure functions only — no state mutation — mirroring how `search.go` holds
 only `firstMatch` while mutation lives in `update.go`:
 
 ```go
-// sortedMarkLetters returns the letters of m in ascending rune order
-// (a-z then A-Z), for stable, deterministic list-screen row order.
+// sortedMarkLetters returns the letters of m sorted lowercase-before-
+// uppercase, alphabetical within each case (vim/ranger's `:marks`
+// convention — NOT Go's default ascending-rune sort, which would put
+// 'A'-'Z' before 'a'-'z'), for stable, deterministic list-screen row
+// order.
 func sortedMarkLetters(m marksPkg.Marks) []rune
 
 // marksListCursorFor returns 0 if m is non-empty, -1 if empty — the
@@ -227,7 +241,7 @@ states):
   `"%c  %s"` (letter, two spaces, absolute path); the row at index
   `marksCursor` rendered with the existing `selectedStyle` (reverse video),
   same style used for the active column's highlighted row.
-- Empty (`len(m.marks) == 0`): single centered line `"no marks set"` —
+- Empty (`len(m.markTable) == 0`): single centered line `"no marks set"` —
   same centered-message convention as `[permission denied]` in
   `renderColumn`.
 - Long paths wider than the pane: truncate with the existing `truncate()`
@@ -242,9 +256,19 @@ the three new modes for the left-side hint string (mirroring how
 - `marksListMode`: left side shows `↑/k ↓/j move · enter jump · d delete · q/esc close`.
 - Normal-mode hint string gains `· m mark · ` \` jump · ' marks` (appended
   to the existing `... · / search · ? help · q quit` string).
-- Right side (`statusErr`-or-`activePath` precedence) is unchanged by this
-  feature outside of the new `statusErr` values already described in §5 —
-  no new right-side states.
+- Right side (`statusErr`-or-`activePath` precedence) keeps its existing
+  default behavior in `marksListMode` — no override, unlike the
+  `helpMode`/`searchMode` branches that force `right = m.activePath`.
+  This is required, not incidental: the `enter`-on-deleted-target case in
+  §5's `marksListMode` table sets `statusErr` and deliberately stays in
+  `marksListMode`, and that error must still surface on the status line
+  while the marks list is showing. Outside of the new `statusErr` values
+  already described in §5, no new right-side states are introduced.
+- `View()` gains a `marksListMode` branch parallel to the existing
+  `helpMode` one (`if m.helpMode { return header + "\n" + m.renderHelp(rows)
+  + "\n" + m.statusLine() }`): `if m.marksListMode { return header + "\n" +
+  m.renderMarksList(rows) + "\n" + m.statusLine() }`, checked in the same
+  position (before `buildColumns`).
 
 ## 8. Documentation updates
 
