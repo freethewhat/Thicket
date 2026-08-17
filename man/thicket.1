@@ -10,6 +10,9 @@ thicket \- Miller-column TUI file browser for the terminal
 .br
 .B thicket
 .RB { \-v | \-\-version }
+.br
+.B thicket
+.B update
 .SH DESCRIPTION
 .B thicket
 is a terminal file browser using a Miller-column (multi-pane) layout, similar
@@ -39,6 +42,12 @@ Print usage and the keybinding table to stdout, then exit.
 .TP
 .BR \-v ", " \-\-version
 Print the version and exit.
+.TP
+.B update
+Download and install the latest release for the current OS/arch into
+the same install prefix used at install time (see
+.B ENVIRONMENT
+below), then exit. Equivalent to re-running the install script.
 .SH KEYS
 .TP
 .BR Up ", " k
@@ -129,6 +138,21 @@ then the absolute directory path it points to.
 If the file exists but cannot be read, thicket exits with status 2 (see
 .B EXIT STATUS
 below).
+.SH ENVIRONMENT
+.TP
+.B THICKET_NO_UPDATE_CHECK
+If set to any non-empty value, disables the on-launch check for a newer
+release. Has no effect on
+.B thicket update
+itself, which always checks.
+.TP
+.B PREFIX
+Used only by
+.B thicket update
+(and by
+.IR scripts/install.sh ):
+the install root for the binary and man page. Defaults to
+.IR /usr/local .
 .SH EXIT STATUS
 .TP
 .B 0

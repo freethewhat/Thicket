@@ -69,6 +69,22 @@ the full manual). Keys:
 Navigation only in v1 — no file create/rename/delete/copy/move, no config
 file.
 
+## Updating
+
+```sh
+thicket-bin update
+```
+
+Downloads and installs the latest release for your OS/arch into the same
+`PREFIX` (default `/usr/local`) used by the install script above,
+including the same sudo-elevation behavior for a non-writable prefix.
+
+thicket also checks for a newer release on every launch (a single
+GitHub API request, 2-second timeout, fails silently if offline or
+slow) and shows a 5-second "update available" notice in the status line
+when one exists. Set `THICKET_NO_UPDATE_CHECK=1` to disable this check
+entirely.
+
 ## License
 
 [MIT](LICENSE)

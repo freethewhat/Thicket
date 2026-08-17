@@ -152,9 +152,16 @@ Manual run without installing: `go run ./cmd/thicket [path]`.
   every `View()` call* rather than cached — see `Model` doc comment in
   `internal/tui/model.go`. Do not introduce a pane cache without updating
   that documented invariant.
-- **Concurrency**: none. Everything runs synchronously inside Bubble Tea's
-  `Update`/`View` calls; no `tea.Cmd`, goroutines, or channels are used
-  anywhere in the codebase.
+- **Concurrency**: narrowly scoped. All navigation/search/find/marks
+  handling is synchronous, same as before. The one exception is the
+  on-launch update check (`internal/tui/update_check.go`): `Model.Init`
+  returns a `tea.Cmd` that does a single bounded (2s timeout) GitHub API
+  request, and a successful check schedules a `tea.Tick` to auto-dismiss
+  its status-line toast after 5s. No goroutines or channels are used
+  directly anywhere — `tea.Cmd`/`tea.Tick` are Bubble Tea's own async
+  primitives, run by its scheduler, not manually spawned. Do not
+  introduce further `tea.Cmd`/goroutine/channel use elsewhere in
+  `internal/tui` without updating this bullet again.
 - **Dependency injection**: none needed/used — `fsutil` functions are
   called directly by `internal/tui`; no interfaces/mocks for the
   filesystem layer. Package-level lipgloss styles in `internal/tui` are
