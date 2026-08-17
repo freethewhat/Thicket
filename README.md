@@ -6,30 +6,45 @@ directory.
 
 ## Install
 
+### From a release (Linux/macOS, amd64/arm64)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/freethewhat/Thicket/master/scripts/install.sh | sh
+```
+
+Installs `thicket-bin` and the man page under `/usr/local` (override with
+`PREFIX=...`), and the shell wrappers under `/usr/local/share/thicket/shell`.
+Pin a version with `... | sh -s -- v0.1.0` or `VERSION=v0.1.0 ... | sh`.
+Prebuilt archives and checksums are also available directly from the
+[Releases page](https://github.com/freethewhat/Thicket/releases).
+
+### From source
+
 ```sh
 go build -o thicket-bin ./cmd/thicket
 sudo install -m 755 thicket-bin /usr/local/bin/thicket-bin
 sudo install -m 644 man/thicket.1 /usr/local/share/man/man1/thicket.1
 ```
 
-Then source the shell wrapper for your shell:
+Then source the shell wrapper for your shell — from
+`/usr/local/share/thicket/shell/` if installed via the script above, or
+from your checkout's `shell/` directory if built from source:
 
 ```sh
 # bash: add to ~/.bashrc
-source /path/to/thicket/shell/thicket.bash
+source /path/to/thicket.bash
 
 # zsh: add to ~/.zshrc
-source /path/to/thicket/shell/thicket.zsh
+source /path/to/thicket.zsh
 ```
 
 This defines a `thicket` shell function. Rename it in your rc file if
 you'd rather use a different name — the `thicket-bin` binary itself
 doesn't care what the wrapper is called.
 
-## Usage
-
 Run `thicket` (or `thicket /some/path` to start elsewhere; `thicket --help`
-for a summary, `man thicket` for the full manual). Keys:
+for a summary, `thicket --version` to print the version, `man thicket` for
+the full manual). Keys:
 
 | Key(s) | Action |
 |---|---|
@@ -52,3 +67,7 @@ for a summary, `man thicket` for the full manual). Keys:
 
 Navigation only in v1 — no file create/rename/delete/copy/move, no config
 file.
+
+## License
+
+[MIT](LICENSE)
