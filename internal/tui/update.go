@@ -357,10 +357,41 @@ func (m *Model) moveFindCursor(delta int) {
 	}
 }
 
-// commitFindSelection is completed in Task 5; a placeholder that always
-// no-ops is enough for this task's tests, none of which press Enter.
-func (m *Model) commitFindSelection() {}
-
+// commitFindSelection relocates activePath/activeCursor to the selected
+// match's parent directory (spec §5's Enter row) and exits find mode. A
+// no-op when findCursor is -1 (empty walk, or the current query matches
+// nothing) — find mode stays open so the user can keep typing.
+func (m *Model) commitFindSelection() {
+	filtered := filterWalk(m.findResults, m.findQuery)
+	if m.findCursor < 0 || m.findCursor >= len(filtered) {
+		return
+	}
+	we := filtered[m.findCursor]
+	relDir := filepath.Dir(we.RelPath)
+	newPath := m.activePath
+	if relDir != "." {
+		newPath = filepath.Join(m.activePath, relDir)
+	}
+	entries, err := fsutil.ListDir(newPath, m.showHidden)
+	if err != nil {
+		m.statusErr = err.Error()
+		m.exitFindMode()
+		return
+	}
+	m.activePath = newPath
+	m.activeEntries = entries
+	m.activeCursor = fsutil.IndexOfName(entries, we.Name)
+	if m.activeCursor < 0 {
+		m.activeCursor = 0
+		if len(entries) == 0 {
+			m.activeCursor = -1
+		}
+	}
+	m.activeScroll = 0
+	m.clampScroll()
+	m.statusErr = ""
+	m.exitFindMode()
+}
 
 // handleSearchKey processes one key while searchMode is true (spec §4).
 // Discriminates on msg.Type, not msg.String() — see Global Constraints.

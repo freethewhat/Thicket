@@ -1765,3 +1765,92 @@ func TestUpdate_WindowResizeWorksDuringFind(t *testing.T) {
 		t.Fatalf("resize must not disturb find state: findMode=%v findQuery=%q", m.findMode, m.findQuery)
 	}
 }
+
+func TestUpdate_FindEnterRelocatesActivePathToMatchParentAndExits(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("leaf")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("Enter committing a find selection must not quit the program (two-step commit)")
+	}
+	if m.findMode {
+		t.Fatal("expected findMode == false after commit")
+	}
+	wantPath := filepath.Join(root, "sub")
+	if m.activePath != wantPath {
+		t.Fatalf("activePath = %q, want %q (leaf.txt's parent)", m.activePath, wantPath)
+	}
+	if m.activeCursor < 0 || m.activeCursor >= len(m.activeEntries) || m.activeEntries[m.activeCursor].Name != "leaf.txt" {
+		t.Fatalf("expected cursor on leaf.txt, got activeCursor=%d entries=%+v", m.activeCursor, m.activeEntries)
+	}
+}
+
+func TestUpdate_FindEnterOnTopLevelMatchKeepsActivePath(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("file.txt")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if m.activePath != root {
+		t.Fatalf("activePath = %q, want unchanged root %q (file.txt lives directly in root)", m.activePath, root)
+	}
+	if m.activeEntries[m.activeCursor].Name != "file.txt" {
+		t.Fatalf("expected cursor on file.txt, got %+v", m.activeEntries[m.activeCursor])
+	}
+}
+
+func TestUpdate_FindEnterOnEmptyResultsIsNoop(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	prevPath, prevCursor := m.activePath, m.activeCursor
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("zzzznomatch")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("Enter with no results must not quit")
+	}
+	if !m.findMode {
+		t.Fatal("expected findMode to stay true — a no-match Enter does not close the prompt")
+	}
+	if m.activePath != prevPath || m.activeCursor != prevCursor {
+		t.Fatalf("expected no relocation on a no-match Enter: activePath=%q activeCursor=%d", m.activePath, m.activeCursor)
+	}
+}
+
+func TestUpdate_FindEnterOnGrandchildMatchRelocatesTwoLevelsDeep(t *testing.T) {
+	root := setupFixture(t)
+	mustWriteFile(t, filepath.Join(root, "sub", "grand", "deep.txt"), "hi")
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("deep")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	wantPath := filepath.Join(root, "sub", "grand")
+	if m.activePath != wantPath {
+		t.Fatalf("activePath = %q, want %q", m.activePath, wantPath)
+	}
+	if m.activeEntries[m.activeCursor].Name != "deep.txt" {
+		t.Fatalf("expected cursor on deep.txt, got %+v", m.activeEntries[m.activeCursor])
+	}
+}
