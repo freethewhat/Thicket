@@ -77,10 +77,17 @@ stays valid and unaffected.
 ### `internal/update` (new package)
 
 - `LatestTag(ctx context.Context) (string, error)` — `GET
-  https://api.github.com/repos/freethewhat/Thicket/releases/latest`,
-  decode JSON, return `tag_name`. Uses `encoding/json` (install.sh's
-  grep/sed extraction is a shell-only constraint that doesn't apply here).
-  Respects `ctx`'s deadline via `http.NewRequestWithContext`.
+  https://api.github.com/repos/freethewhat/Thicket/releases/latest`. Returns
+  an error if the request fails outright (offline, DNS failure, connection
+  refused, `ctx` deadline exceeded), **or if the response status is not
+  `200`** (e.g. GitHub API rate-limiting returns `403` with a
+  `{"message": "..."}` body that has no `tag_name` field at all — this
+  must not be treated as "latest version is empty string" and silently
+  fall through to a parse failure; it's rejected explicitly at the status
+  check, before JSON decoding). Otherwise decodes the JSON body with
+  `encoding/json` and returns `tag_name` (install.sh's grep/sed extraction
+  is a shell-only constraint that doesn't apply here). Respects `ctx`'s
+  deadline via `http.NewRequestWithContext`.
 - `IsNewer(current, latest string) bool` — strips a leading `v`, splits on
   `.`, parses each component as an int, compares
   `(major, minor, patch)` lexicographically. Returns `false` if `current
@@ -208,7 +215,9 @@ not the `update` subcommand itself.
 
 | Condition | Behavior |
 |---|---|
-| Network unreachable / slow / malformed JSON during check | Silent — `Init`'s `tea.Cmd` returns a nil `Msg`, no toast, nothing else changes |
+| Network unreachable / DNS failure / connection refused / `ctx` timeout during check | Silent — `LatestTag` returns an error, `checkUpdateCmd` returns a nil `Msg`, no toast, nothing else changes |
+| Non-`200` HTTP response (rate-limited, GitHub outage, unexpected redirect, etc.) | Silent — `LatestTag` returns an error on the status check before attempting to decode a body, same nil-`Msg` path as above |
+| Malformed/unexpected JSON body on a `200` response | Silent — `encoding/json` decode error, same nil-`Msg` path |
 | `THICKET_NO_UPDATE_CHECK` set (any non-empty value) | `checkVersion == ""`, `Init` returns `nil`, no `tea.Cmd` ever runs |
 | `version == "dev"` | Same as above |
 | Toast shown | Auto-clears after 5s via `tea.Tick`; also naturally overwritten immediately if `statusErr` becomes non-empty in the meantime (error takes precedence) |
@@ -220,8 +229,11 @@ not the `update` subcommand itself.
 - `internal/update`:
   - `IsNewer`: table test — equal versions, older, newer (major/minor/patch
     each), malformed tags on either side, `current == "dev"`.
-  - `LatestTag`: `httptest.Server` — happy path (valid JSON), 404,
-    malformed JSON body, context already expired/short timeout.
+  - `LatestTag`: `httptest.Server` — happy path (valid JSON), 404, 403 with
+    a rate-limit-shaped body (`{"message": "..."}`, no `tag_name`,
+    confirms this errors at the status check rather than decoding to an
+    empty version), malformed JSON body on a 200, context
+    already-expired/short timeout.
   - `Run`: not unit-tested (shells out, installs, requires network/sudo in
     the general case) — covered by a manual smoke test: `go build -o
     thicket-bin ./cmd/thicket && PREFIX=$(mktemp -d) ./thicket-bin update`,
