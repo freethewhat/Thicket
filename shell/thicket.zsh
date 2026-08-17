@@ -2,7 +2,7 @@
 #   source /path/to/thicket.zsh
 thicket() {
   case "$1" in
-    -h|--help)
+    -h|--help|update)
       command thicket-bin "$@"
       return
       ;;

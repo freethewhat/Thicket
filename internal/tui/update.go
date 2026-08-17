@@ -92,6 +92,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "'":
 			m.enterMarksListMode()
 		}
+	case updateAvailableMsg:
+		m.updateNotice = updateNoticeText(msg.tag)
+		return m, dismissNoticeCmd(updateNoticeDuration)
+	case clearUpdateNoticeMsg:
+		m.updateNotice = ""
 	}
 	return m, nil
 }

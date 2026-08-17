@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"thicket/internal/marks"
 	"thicket/internal/tui"
+	"thicket/internal/update"
 )
 
 // version is set at build time via
@@ -18,6 +20,14 @@ import (
 var version = "dev"
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "update" {
+		if err := update.Run(context.Background()); err != nil {
+			fmt.Fprintf(os.Stderr, "thicket: update failed: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	start := "."
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -43,6 +53,12 @@ func main() {
 		fmt.Fprintf(os.Stderr, "thicket: %v\n", err)
 		os.Exit(2)
 	}
+
+	checkVersion := version
+	if os.Getenv("THICKET_NO_UPDATE_CHECK") != "" {
+		checkVersion = ""
+	}
+	m = m.WithUpdateCheck(checkVersion)
 
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
@@ -98,7 +114,8 @@ func helpText() string {
 	b.WriteString("Usage:\n")
 	b.WriteString("  thicket [path]\n")
 	b.WriteString("  thicket -h | --help\n")
-	b.WriteString("  thicket -v | --version\n\n")
+	b.WriteString("  thicket -v | --version\n")
+	b.WriteString("  thicket update\n\n")
 	b.WriteString("Arguments:\n")
 	b.WriteString("  path    Directory to start browsing in (default: current directory)\n\n")
 	b.WriteString("Keys:\n")

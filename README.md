@@ -69,6 +69,26 @@ the full manual). Keys:
 Navigation only in v1 — no file create/rename/delete/copy/move, no config
 file.
 
+## Updating
+
+```sh
+thicket-bin update
+```
+
+Downloads and installs the latest release for your OS/arch. `thicket update`
+reads `PREFIX` from the environment at the time you run it (default `/usr/local`),
+the same as `scripts/install.sh` — if you installed to a non-default `PREFIX`,
+export it again before running `thicket update`, or the update will land under
+`/usr/local` instead. Like the install script, `thicket update` includes the same
+sudo-elevation behavior for a non-writable prefix.
+
+thicket also checks for a newer release on every launch (a single
+GitHub API request, 2-second timeout, fails silently if offline or
+slow) and shows a 5-second "update available" notice in the status line
+when one exists (release builds only — a `go build`/`go run` source build
+reports version `dev` and never checks). Set `THICKET_NO_UPDATE_CHECK=1` to
+disable this check entirely.
+
 ## License
 
 [MIT](LICENSE)

@@ -10,6 +10,9 @@ thicket \- Miller-column TUI file browser for the terminal
 .br
 .B thicket
 .RB { \-v | \-\-version }
+.br
+.B thicket
+.B update
 .SH DESCRIPTION
 .B thicket
 is a terminal file browser using a Miller-column (multi-pane) layout, similar
@@ -39,6 +42,32 @@ Print usage and the keybinding table to stdout, then exit.
 .TP
 .BR \-v ", " \-\-version
 Print the version and exit.
+.TP
+.B update
+Download and install the latest release for the current OS/arch.
+Reads
+.B PREFIX
+from the environment at the time you run it (default
+.IR /usr/local ),
+the same as
+.IR scripts/install.sh .
+If you installed to a non-default
+.BR PREFIX ,
+export it again before running
+.BR "thicket update" ,
+or the update will land under
+.IR /usr/local
+instead (see
+.B ENVIRONMENT
+below). Like the install script, includes the same sudo-elevation
+behavior for a non-writable prefix. Equivalent to re-running the install script.
+A start path literally named
+.I update
+in the current directory is shadowed by this subcommand: running
+.B thicket update
+always triggers the installer, never opens such a directory. Pass
+.I ./update
+instead to open it.
 .SH KEYS
 .TP
 .BR Up ", " k
@@ -129,6 +158,21 @@ then the absolute directory path it points to.
 If the file exists but cannot be read, thicket exits with status 2 (see
 .B EXIT STATUS
 below).
+.SH ENVIRONMENT
+.TP
+.B THICKET_NO_UPDATE_CHECK
+If set to any non-empty value, disables the on-launch check for a newer
+release. Has no effect on
+.B thicket update
+itself, which always checks.
+.TP
+.B PREFIX
+Used only by
+.B thicket update
+(and by
+.IR scripts/install.sh ):
+the install root for the binary and man page. Defaults to
+.IR /usr/local .
 .SH EXIT STATUS
 .TP
 .B 0

@@ -22,8 +22,9 @@ Every other v1 non-goal in §3 still holds.
 ## Architecture & Data Flow
 
 Three-layer module; `cmd/thicket` depends on `internal/tui` and directly on
-`internal/marks` (for `marks.DefaultPath()`), while `internal/tui` depends
-on `internal/fsutil` and `internal/marks`:
+`internal/marks` (for `marks.DefaultPath()`) and `internal/update` (for the
+`update` subcommand), while `internal/tui` depends on
+`internal/{fsutil,marks,update}`:
 
 1. **`internal/fsutil`** — pure filesystem I/O. `ListDir(dir, showHidden) ([]Entry, error)`
    reads a directory, classifies each entry (symlink resolution via
@@ -60,8 +61,10 @@ on `internal/fsutil` and `internal/marks`:
    replacing the column layout entirely rather than overlaying it — for
    the `?` help screen, the `'` marks list, and the `f` recursive-find
    result list when their respective mode flags are set. All I/O runs
-   synchronously inside `Update`/`View` on the Bubble Tea event loop —
-   **no goroutines, channels, or `tea.Cmd` async work**.
+   synchronously inside `Update`/`View` on the Bubble Tea event loop, with
+   one narrow exception: the on-launch update check uses a `tea.Cmd`/`tea.Tick`
+   pair (see **Concurrency** bullet below) — **no goroutines or channels are
+   used anywhere**.
 4. **`cmd/thicket`** — process entry point and terminal wiring
    (`cmd/thicket/main.go`). Opens `/dev/tty` directly (`os.OpenFile("/dev/tty", ...)`)
    for TUI input/output so the program still gets a real terminal even
@@ -80,17 +83,18 @@ on `internal/fsutil` and `internal/marks`:
 th (shell function) → thicket binary (/dev/tty for UI) → stdout: chosen path
                                 │
                     cmd/thicket/main.go
-                          │            │
-                   internal/tui        │
-            (Model/Update/View,        │
-             Bubble Tea)               │
-                  │       │            │
-                  │       └─────┬──────┘
-                  ▼             ▼
-        internal/fsutil   internal/marks (Load,
-        (ListDir,          Save, DefaultPath)
-         ReadFilePreview,
-         WalkSubtree)
+              (also calls marks.DefaultPath() directly,
+               and internal/update.Run for the `update`
+               subcommand — see below)
+                                │
+                         internal/tui
+                   (Model/Update/View, Bubble Tea)
+                │                │                │
+                ▼                ▼                ▼
+       internal/fsutil    internal/update    internal/marks
+       (ListDir,           (LatestTag,        (Load, Save,
+        ReadFilePreview,    IsNewer, Run)      DefaultPath)
+        WalkSubtree)
 ```
 
 ## Key Directories
@@ -101,6 +105,7 @@ th (shell function) → thicket binary (/dev/tty for UI) → stdout: chosen path
 | `internal/tui/` | Bubble Tea `Model`/`Update`/`View` — navigation state machine and rendering |
 | `internal/marks/` | Pure directory-marks (bookmark) persistence — letter→path table, load/save, no TUI concerns |
 | `internal/fsutil/` | Pure filesystem helpers — directory listing, entry classification, file preview |
+| `internal/update/` | Release check + install — `LatestTag`/`IsNewer`/`Run` |
 | `shell/` | `thicket` shell-function wrappers for bash and zsh (source into rc files) |
 | `man/` | `thicket.1` troff man page (`man thicket` after install) |
 | `docs/superpowers/plans/` | Implementation plan doc(s) — task breakdown with code templates |
@@ -152,9 +157,16 @@ Manual run without installing: `go run ./cmd/thicket [path]`.
   every `View()` call* rather than cached — see `Model` doc comment in
   `internal/tui/model.go`. Do not introduce a pane cache without updating
   that documented invariant.
-- **Concurrency**: none. Everything runs synchronously inside Bubble Tea's
-  `Update`/`View` calls; no `tea.Cmd`, goroutines, or channels are used
-  anywhere in the codebase.
+- **Concurrency**: narrowly scoped. All navigation/search/find/marks
+  handling is synchronous, same as before. The one exception is the
+  on-launch update check (`internal/tui/update_check.go`): `Model.Init`
+  returns a `tea.Cmd` that does a single bounded (2s timeout) GitHub API
+  request, and a successful check schedules a `tea.Tick` to auto-dismiss
+  its status-line toast after 5s. No goroutines or channels are used
+  directly anywhere — `tea.Cmd`/`tea.Tick` are Bubble Tea's own async
+  primitives, run by its scheduler, not manually spawned. Do not
+  introduce further `tea.Cmd`/goroutine/channel use elsewhere in
+  `internal/tui` without updating this bullet again.
 - **Dependency injection**: none needed/used — `fsutil` functions are
   called directly by `internal/tui`; no interfaces/mocks for the
   filesystem layer. Package-level lipgloss styles in `internal/tui` are
@@ -178,6 +190,9 @@ Manual run without installing: `go run ./cmd/thicket [path]`.
 | `internal/tui/search.go` | `firstMatch` — pure case-insensitive substring search over an already-loaded entry list, used by type-ahead search |
 | `internal/marks/marks.go` | `Marks`, `Load`, `Save`, `DefaultPath` — the letter→path bookmark table and its on-disk format |
 | `internal/tui/marks.go` | `sortedMarkLetters`, `marksListCursorFor` — pure helpers behind the marks list screen and `` ` ``/`'` navigation |
+| `internal/update/check.go` | `LatestTag`, `IsNewer` — GitHub releases API check and version comparison |
+| `internal/update/run.go` | `Run` — pipes the embedded `install.sh` to `sh` to perform the update |
+| `scripts/embed.go` | `//go:embed install.sh` — embeds the install script for `internal/update/run.go` |
 | `internal/tui/help.go` | `Keybindings` (single source of truth for the `?` help screen and `cmd/thicket --help`) and `renderHelp` |
 | `shell/thicket.bash`, `shell/thicket.zsh` | `th()` wrapper functions that `cd` the calling shell |
 | `man/thicket.1` | Troff man page — NAME/SYNOPSIS/OPTIONS/KEYS/EXIT STATUS/SHELL INTEGRATION, hand-maintained in sync with `internal/tui/help.go` and the README table |

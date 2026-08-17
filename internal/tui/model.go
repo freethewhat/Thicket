@@ -18,6 +18,17 @@ type Model struct {
 	activeScroll  int
 	showHidden    bool
 	statusErr     string
+	// checkVersion/updateNotice: on-launch update-check state (spec
+	// docs/superpowers/specs/2026-08-17-thicket-update-check-design.md).
+	// checkVersion is set once via WithUpdateCheck before the Bubble Tea
+	// program starts; empty ("" or "dev") disables the check entirely —
+	// Init returns nil and no network request is ever made. updateNotice
+	// is populated by Update's updateAvailableMsg case and rendered by
+	// statusLine; it self-clears via a tea.Tick-scheduled
+	// clearUpdateNoticeMsg, mirroring statusErr's shape but with a timed
+	// auto-dismiss statusErr does not have.
+	checkVersion string
+	updateNotice string
 	// searchMode/searchQuery/searchNoMatch/searchPrevCursor: type-ahead
 	// search state (spec docs/superpowers/specs/2026-08-16-thicket-type-ahead-search-design.md).
 	// Zero-valued at construction — no change to New()'s behavior.
@@ -104,8 +115,22 @@ func New(startPath, marksPath string) (Model, error) {
 	return m, nil
 }
 
+// WithUpdateCheck returns a copy of m configured to check for a newer
+// release when the Bubble Tea program starts, comparing against
+// currentVersion. An empty currentVersion (or "dev") disables the check
+// entirely: Init returns nil and no network request is ever made.
+// cmd/thicket computes currentVersion once from the build's version and
+// THICKET_NO_UPDATE_CHECK before calling this method.
+func (m Model) WithUpdateCheck(currentVersion string) Model {
+	m.checkVersion = currentVersion
+	return m
+}
+
 func (m Model) Init() tea.Cmd {
-	return nil
+	if m.checkVersion == "" || m.checkVersion == "dev" {
+		return nil
+	}
+	return checkUpdateCmd(m.checkVersion)
 }
 
 // Result reports the outcome after the program quits: ok is true only if
