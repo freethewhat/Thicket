@@ -23,3 +23,23 @@ func firstMatch(entries []fsutil.Entry, query string) int {
 	}
 	return -1
 }
+
+// filterWalk returns the entries in results (in walk order) whose RelPath
+// case-insensitively contains query. An empty query matches every entry
+// (returns results unchanged, in walk order) — deliberately diverging
+// from firstMatch's "empty query matches nothing" convention: find mode
+// is a browsable list, useful immediately after f is pressed, not only
+// once the user starts typing.
+func filterWalk(results []fsutil.WalkEntry, query string) []fsutil.WalkEntry {
+	if query == "" {
+		return results
+	}
+	q := strings.ToLower(query)
+	var matched []fsutil.WalkEntry
+	for _, e := range results {
+		if strings.Contains(strings.ToLower(e.RelPath), q) {
+			matched = append(matched, e)
+		}
+	}
+	return matched
+}

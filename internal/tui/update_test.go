@@ -1423,3 +1423,40 @@ func TestUpdate_CtrlCQuitsFromEveryMarksMode(t *testing.T) {
 		}
 	}
 }
+func TestFilterWalk_CaseInsensitiveSubstringOverRelPath(t *testing.T) {
+	results := []fsutil.WalkEntry{
+		{Entry: fsutil.Entry{Name: "Report.txt"}, RelPath: "docs/Report.txt"},
+		{Entry: fsutil.Entry{Name: "other.txt"}, RelPath: "other.txt"},
+	}
+
+	got := filterWalk(results, "report")
+
+	if len(got) != 1 || got[0].RelPath != "docs/Report.txt" {
+		t.Fatalf("filterWalk(%q) = %+v, want just docs/Report.txt", "report", got)
+	}
+}
+
+func TestFilterWalk_EmptyQueryMatchesEveryEntry(t *testing.T) {
+	results := []fsutil.WalkEntry{
+		{Entry: fsutil.Entry{Name: "a"}, RelPath: "a"},
+		{Entry: fsutil.Entry{Name: "b"}, RelPath: "b"},
+	}
+
+	got := filterWalk(results, "")
+
+	if len(got) != 2 {
+		t.Fatalf("filterWalk(\"\") = %+v, want all %d entries unchanged", got, len(results))
+	}
+}
+
+func TestFilterWalk_NoMatchReturnsEmpty(t *testing.T) {
+	results := []fsutil.WalkEntry{
+		{Entry: fsutil.Entry{Name: "a"}, RelPath: "a"},
+	}
+
+	got := filterWalk(results, "zzz")
+
+	if len(got) != 0 {
+		t.Fatalf("filterWalk(\"zzz\") = %+v, want empty", got)
+	}
+}
