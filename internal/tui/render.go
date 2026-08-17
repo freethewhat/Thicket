@@ -388,16 +388,45 @@ func (m Model) renderFind(rows int) string {
 	if len(filtered) == 0 {
 		lines = []string{"no matches"}
 	} else {
-		lines = make([]string, len(filtered))
-		for i, we := range filtered {
-			text := truncate(we.RelPath, width)
+		// One row is reserved at the bottom for the truncated indicator
+		// when present, so the scrolling window below sizes itself to
+		// the remaining entry rows rather than the full pane height.
+		entryRows := rows
+		if m.findTruncated && entryRows > 0 {
+			entryRows--
+		}
+		// findCursor indexes into the full filtered list (up to the walk
+		// cap), which can be far larger than entryRows — mirror
+		// buildAncestors/buildPreview's use of scrollStartFor to keep the
+		// highlighted row within the visible window instead of always
+		// starting at index 0.
+		start := scrollStartFor(m.findCursor, entryRows)
+		end := start + entryRows
+		if end > len(filtered) {
+			end = len(filtered)
+		}
+		if start > end {
+			start = end
+		}
+		window := filtered[start:end]
+		lines = make([]string, len(window))
+		for i, we := range window {
+			// Reserve a width cell for the symlink '@' suffix before
+			// truncating, same as renderColumn's reservedForSymlink —
+			// otherwise a RelPath reaching the full pane width plus '@'
+			// overflows to width+1 cells and soft-wraps the row.
+			nameWidth := width
+			if we.IsSymlink {
+				nameWidth--
+			}
+			text := truncate(we.RelPath, nameWidth)
 			if we.IsDir {
 				text = dirStyle.Render(text)
 			}
 			if we.IsSymlink {
 				text += symlinkStyle.Render("@")
 			}
-			if i == m.findCursor {
+			if start+i == m.findCursor {
 				text = selectedStyle.Render(text)
 			}
 			lines[i] = text

@@ -666,3 +666,55 @@ func TestView_StatusLineFindHintDiscoverable(t *testing.T) {
 		t.Fatalf("statusLine() missing 'f find' hint: %q", m.statusLine())
 	}
 }
+
+// TestView_FindModeSymlinkAtFullWidthDoesNotPushOutNextEntry covers a
+// review defect: renderFind must reserve a width cell for the symlink '@'
+// suffix before truncating RelPath, same as renderColumn's
+// reservedForSymlink. Without it, a symlink whose RelPath reaches the full
+// pane width overflows to width+1 display cells, soft-wrapping that row
+// and pushing later entries out of the MaxHeight-clipped view.
+func TestView_FindModeSymlinkAtFullWidthDoesNotPushOutNextEntry(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 20
+	m.height = 6 // visibleRows() == 2
+	m.findMode = true
+	width := m.width - paneBorderWidth
+	m.findResults = []fsutil.WalkEntry{
+		{Entry: fsutil.Entry{Name: "link", IsSymlink: true}, RelPath: strings.Repeat("x", width)},
+		{Entry: fsutil.Entry{Name: "nextentry"}, RelPath: "nextentry"},
+	}
+	m.findCursor = 0
+
+	out := m.renderFind(m.visibleRows())
+
+	if !strings.Contains(out, "nextentry") {
+		t.Fatalf("symlink at full pane width pushed the next entry out of view:\n%s", out)
+	}
+}
+
+// TestView_FindModeScrollsToKeepCursorVisible covers a review defect:
+// findCursor is clamped against the full filtered result list (up to the
+// walk cap, far larger than the visible rows), so renderFind must track
+// it with a scrolling window (mirroring scrollStartFor's use in
+// buildAncestors/buildPreview) instead of always rendering from index 0.
+func TestView_FindModeScrollsToKeepCursorVisible(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.height = 7 // visibleRows() == 3
+	m.width = 100
+	m.findMode = true
+	entries := make([]fsutil.WalkEntry, 10)
+	for i := range entries {
+		name := fmt.Sprintf("n%02d", i)
+		entries[i] = fsutil.WalkEntry{Entry: fsutil.Entry{Name: name}, RelPath: name}
+	}
+	m.findResults = entries
+	m.findCursor = 9
+
+	out := m.renderFind(m.visibleRows())
+
+	if !strings.Contains(out, "n09") {
+		t.Fatalf("expected cursor entry n09 visible after scrolling:\n%s", out)
+	}
+}
