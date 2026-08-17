@@ -60,8 +60,10 @@ on `internal/fsutil` and `internal/marks`:
    replacing the column layout entirely rather than overlaying it — for
    the `?` help screen, the `'` marks list, and the `f` recursive-find
    result list when their respective mode flags are set. All I/O runs
-   synchronously inside `Update`/`View` on the Bubble Tea event loop —
-   **no goroutines, channels, or `tea.Cmd` async work**.
+   synchronously inside `Update`/`View` on the Bubble Tea event loop, with
+   one narrow exception: the on-launch update check uses a `tea.Cmd`/`tea.Tick`
+   pair (see **Concurrency** bullet below) — **no goroutines or channels are
+   used anywhere**.
 4. **`cmd/thicket`** — process entry point and terminal wiring
    (`cmd/thicket/main.go`). Opens `/dev/tty` directly (`os.OpenFile("/dev/tty", ...)`)
    for TUI input/output so the program still gets a real terminal even
