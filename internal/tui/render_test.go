@@ -747,3 +747,55 @@ func TestView_FindModeSingleRowPaneWithTruncatedStillShowsEntry(t *testing.T) {
 		t.Fatalf("expected the cursor's entry visible in a 1-row truncated find pane, got only the truncated indicator:\n%s", out)
 	}
 }
+func TestView_StatusLineShowsUpdateNotice(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	m.updateNotice = "update available: v9.9.9 — run 'thicket-bin update'"
+
+	if !strings.Contains(m.statusLine(), "update available: v9.9.9") {
+		t.Fatalf("statusLine() missing updateNotice: %q", m.statusLine())
+	}
+}
+
+func TestView_StatusLineStatusErrTakesPrecedenceOverUpdateNotice(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	m.updateNotice = "update available: v9.9.9 — run 'thicket-bin update'"
+	m.statusErr = "open /x: permission denied"
+
+	line := m.statusLine()
+	if !strings.Contains(line, "permission denied") {
+		t.Fatalf("statusLine() missing statusErr: %q", line)
+	}
+	if strings.Contains(line, "update available") {
+		t.Fatalf("statusLine() should not show updateNotice while statusErr is set: %q", line)
+	}
+}
+
+func TestView_StatusLineSearchSuppressesUpdateNotice(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	m.updateNotice = "update available: v9.9.9 — run 'thicket-bin update'"
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")})
+	m = updated.(Model)
+
+	if strings.Contains(m.statusLine(), "update available") {
+		t.Fatalf("statusLine() should suppress updateNotice while searchMode is active: %q", m.statusLine())
+	}
+}
+
+func TestView_StatusLineMarksListStillShowsUpdateNotice(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	m.marksListMode = true
+	m.updateNotice = "update available: v9.9.9 — run 'thicket-bin update'"
+
+	if !strings.Contains(m.statusLine(), "update available") {
+		t.Fatalf("statusLine() should still show updateNotice during marksListMode: %q", m.statusLine())
+	}
+}

@@ -269,6 +269,8 @@ func (m Model) statusLine() string {
 	isErr := m.statusErr != ""
 	if isErr {
 		right = m.statusErr
+	} else if m.updateNotice != "" {
+		right = m.updateNotice
 	}
 	if m.helpMode {
 		left = "? / Esc: close help"
