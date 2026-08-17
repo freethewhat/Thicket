@@ -14,15 +14,32 @@ build-time `ldflags` string with no runtime awareness of newer releases.
 
 - Detect that a newer release exists, without adding noticeable startup
   latency or ever hanging on a slow/unreachable network.
+- Surface the notice as a transient, self-dismissing toast inside the TUI
+  session itself (not only after the user has already quit) — visible for
+  5 seconds, then gone, replaced by the normal status line.
 - Provide a `thicket update` (equivalently `thicket-bin update`) subcommand
   that installs the latest release in place, respecting `PREFIX` and the
   sudo-elevation behavior `scripts/install.sh` already implements.
+- Never install automatically — `thicket update` is always a separate,
+  user-initiated command. The on-launch check only ever informs; it never
+  triggers a download.
 - Respect the "no config file" v1 constraint: opt-out is an environment
   variable, not a config file.
-- Keep `internal/tui`'s synchronous-only invariant (no goroutines,
-  channels, or `tea.Cmd`) untouched — all update-check machinery lives in
-  `cmd/thicket` and a new `internal/update` package, never inside
-  `internal/tui`.
+
+## Invariant change: `internal/tui` gains `tea.Cmd`
+
+`AGENTS.md` and this repo's earlier design specs document `internal/tui`
+as synchronous-only: "no goroutines, channels, or `tea.Cmd`... anywhere in
+the codebase." A toast that appears *during* the session and needs a timed
+auto-dismiss cannot be done from `cmd/thicket` alone — it requires the
+Bubble Tea model to receive an async result and a timer tick. This design
+deliberately introduces `tea.Cmd`/`tea.Tick` to `internal/tui`, scoped
+narrowly to the update-check-and-dismiss pair described below. Nothing
+else in `internal/tui` becomes async — all navigation, search, find, and
+marks handling remain the synchronous `Update()` key-dispatch they are
+today. `AGENTS.md`'s Concurrency bullet must be updated (see Documentation
+below) to state this precise, narrow exception instead of the current
+unconditional "none."
 
 ## Non-goals
 
@@ -34,6 +51,9 @@ build-time `ldflags` string with no runtime awareness of newer releases.
   today (it does not verify against `checksums.txt`; that gap is out of
   scope for this change and unaffected by it).
 - No caching of the "latest release" result across invocations.
+- No general-purpose async infrastructure in `internal/tui` — no worker
+  pool, no cancellation plumbing beyond the check's own context timeout,
+  no reuse of the toast mechanism for anything other than this notice.
 
 ## Design
 
@@ -78,6 +98,94 @@ stays valid and unaffected.
   env vars from the current process untouched — no special-casing needed,
   `install.sh` already reads them itself.
 
+### Update check + toast (`internal/tui`)
+
+`tui.New` gains a `checkVersion` parameter:
+
+```go
+func New(startPath, marksPath, checkVersion string) (Model, error)
+```
+
+`cmd/thicket/main.go` computes `checkVersion` once, before calling `New`:
+empty string disables the check outright (covers both the opt-out and
+`dev` builds); otherwise it's the build's `version`:
+
+```go
+checkVersion := version
+if version == "dev" || os.Getenv("THICKET_NO_UPDATE_CHECK") != "" {
+    checkVersion = ""
+}
+m, err := tui.New(start, marksPath, checkVersion)
+```
+
+`Model` gains an unexported `checkVersion string` field (stored, used only
+by `Init`) and an unexported `updateNotice string` field (rendered by
+`statusLine`, mirrors `statusErr`'s shape).
+
+```go
+func (m Model) Init() tea.Cmd {
+    if m.checkVersion == "" {
+        return nil
+    }
+    return checkUpdateCmd(m.checkVersion)
+}
+
+type updateAvailableMsg struct{ tag string }
+type clearUpdateNoticeMsg struct{}
+
+func checkUpdateCmd(current string) tea.Cmd {
+    return func() tea.Msg {
+        ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+        defer cancel()
+        tag, err := update.LatestTag(ctx)
+        if err != nil || !update.IsNewer(current, tag) {
+            return nil // bubbletea: a Cmd returning a nil Msg is a no-op
+        }
+        return updateAvailableMsg{tag: tag}
+    }
+}
+```
+
+`Update()` gets two new top-level `case` arms, siblings to the existing
+`tea.WindowSizeMsg`/`tea.KeyMsg` cases — so they fire on every tick
+regardless of `helpMode`/`searchMode`/`findMode`/`marksListMode`:
+
+```go
+case updateAvailableMsg:
+    m.updateNotice = fmt.Sprintf("update available: %s — run 'thicket-bin update'", msg.tag)
+    return m, tea.Tick(5*time.Second, func(time.Time) tea.Msg { return clearUpdateNoticeMsg{} })
+case clearUpdateNoticeMsg:
+    m.updateNotice = ""
+```
+
+`statusLine()`'s right-slot precedence gains a middle tier between
+`statusErr` and the default `activePath`:
+
+```go
+right := m.activePath
+isErr := m.statusErr != ""
+if isErr {
+    right = m.statusErr
+} else if m.updateNotice != "" {
+    right = m.updateNotice
+}
+```
+
+placed before the existing `helpMode`/`searchMode`/`findMode` branches,
+which already force `right = m.activePath` unconditionally — so the toast
+is correctly suppressed while help/search/find is open (same treatment
+`statusErr` already gets there) and correctly still shown during
+`marksListMode`, which deliberately keeps the default statusErr-or-toast-
+or-activePath precedence per that mode's existing comment. Rendered with
+`isErr` still `false` (plain style, not the red `errStyle`) since only
+`statusErr` sets `isErr = true`.
+
+`internal/tui` now imports `internal/update` for `LatestTag`/`IsNewer`,
+alongside its existing `internal/fsutil`/`internal/marks` leaf
+dependencies — consistent with the documented `cmd/thicket → internal/tui
+→ internal/{fsutil,marks,update}` dependency direction, not a new
+direction.
+
 ### `cmd/thicket/main.go` changes
 
 **Subcommand routing** (before existing `-h`/`-v`/positional-path parsing):
@@ -92,57 +200,18 @@ if len(os.Args) > 1 && os.Args[1] == "update" {
 }
 ```
 
-Runs standalone — never starts `tea.NewProgram`.
-
-**Update-check on launch** (top of `main()`, TUI path only):
-
-```go
-var updateCh chan string
-if os.Getenv("THICKET_NO_UPDATE_CHECK") == "" && version != "dev" {
-    updateCh = make(chan string, 1)
-    go func() {
-        ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-        defer cancel()
-        if tag, err := update.LatestTag(ctx); err == nil && update.IsNewer(version, tag) {
-            updateCh <- tag
-        }
-    }()
-}
-```
-
-The goroutine lives in `cmd/thicket`, outside `internal/tui`; it does not
-touch the Bubble Tea model or violate the TUI's synchronous-only
-invariant. Startup proceeds immediately into `tea.NewProgram` without
-waiting on this goroutine — it races the user's TUI session in the
-background.
-
-**Surfacing the notice** (after `p.Run()` returns, TUI alt-screen already
-torn down, before/after `writeSelection`):
-
-```go
-if updateCh != nil {
-    select {
-    case tag := <-updateCh:
-        fmt.Fprintf(os.Stderr, "thicket: update available: %s — run 'thicket-bin update' to upgrade\n", tag)
-    case <-time.After(300 * time.Millisecond):
-    }
-}
-```
-
-By the time a user has finished navigating and quit the TUI, the 2s-bounded
-check has almost always already completed; the 300ms grace wait is a
-belt-and-suspenders non-blocking cap, not the primary wait mechanism. On
-timeout, network failure, malformed response, opt-out, or `version ==
-"dev"`, nothing is printed and nothing else changes — completely silent,
-never an error, never affects the exit code chosen by `finalModel.Result()`.
+Runs standalone — never starts `tea.NewProgram`. Unchanged from the
+original design: the toast revision only touches the on-launch check,
+not the `update` subcommand itself.
 
 ### Error handling
 
 | Condition | Behavior |
 |---|---|
-| Network unreachable / slow / malformed JSON during check | Silent — no stderr, no exit code effect |
-| `THICKET_NO_UPDATE_CHECK` set (any non-empty value) | Check never runs |
-| `version == "dev"` | Check never runs |
+| Network unreachable / slow / malformed JSON during check | Silent — `Init`'s `tea.Cmd` returns a nil `Msg`, no toast, nothing else changes |
+| `THICKET_NO_UPDATE_CHECK` set (any non-empty value) | `checkVersion == ""`, `Init` returns `nil`, no `tea.Cmd` ever runs |
+| `version == "dev"` | Same as above |
+| Toast shown | Auto-clears after 5s via `tea.Tick`; also naturally overwritten immediately if `statusErr` becomes non-empty in the meantime (error takes precedence) |
 | `thicket update` — curl/tar/install/sudo failure inside `install.sh` | Child process's own `err()` writes to stderr (inherited), `thicket-bin update` exits 1 |
 | `thicket update` — success | `install.sh`'s existing success messages print (inherited stdout/stderr), `thicket-bin update` exits 0 |
 
@@ -159,6 +228,16 @@ never an error, never affects the exit code chosen by `finalModel.Result()`.
     confirm the binary lands under `$PREFIX/bin/thicket-bin`. Consistent
     with `AGENTS.md`'s existing carve-out that shell/tty integration is
     manual-only.
+- `internal/tui`: `checkUpdateCmd`'s inner `func() tea.Msg` is directly
+  callable and testable without running the full Bubble Tea loop — table
+  test against `httptest.Server` mirroring `internal/update`'s own
+  `LatestTag` tests, confirming it returns `updateAvailableMsg{tag}` on a
+  newer release and `nil` otherwise. `Update()`'s handling of
+  `updateAvailableMsg`/`clearUpdateNoticeMsg` and `statusLine()`'s new
+  precedence tier get ordinary `TestUpdate_Behavior`/`TestView_Behavior`
+  cases matching existing conventions (construct a `Model`, feed it the
+  message, assert `updateNotice`/rendered status line) — no real network
+  or real timers needed since the messages are constructed directly.
 - `cmd/thicket`: subcommand routing and the opt-out are exercised via a
   manual smoke test (`thicket-bin update`, `THICKET_NO_UPDATE_CHECK=1
   thicket-bin -v`) rather than an automated test, since `main()` isn't
@@ -174,18 +253,26 @@ never an error, never affects the exit code chosen by `finalModel.Result()`.
 - `man/thicket.1`: `update` subcommand under SYNOPSIS/a COMMANDS section,
   and `THICKET_NO_UPDATE_CHECK` under an ENVIRONMENT section (new section
   if one doesn't already exist).
+- `AGENTS.md`: update the `internal/tui` Concurrency bullet from "none...
+  no `tea.Cmd`, goroutines, or channels are used anywhere in the codebase"
+  to state the narrow, documented exception this design introduces
+  (update-check `tea.Cmd` + toast-dismiss `tea.Tick`, nothing else) so the
+  invariant statement stays accurate for future contributors.
 
 ## Acceptance criteria (from issue #28)
 
-- [ ] Running an out-of-date `thicket` surfaces a visible-but-non-blocking
-  "update available: vX.Y.Z" notice on stderr after the TUI session ends.
+- [ ] Running an out-of-date `thicket` surfaces a visible, self-dismissing
+  "update available: vX.Y.Z" toast in the status line during the TUI
+  session (5s), not only after the session ends.
 - [ ] `thicket update` downloads and installs the latest release for the
   current OS/arch, matching what `scripts/install.sh` would install for the
   same environment (same `PREFIX` and sudo-elevation behavior, since it
   literally runs that script).
-- [ ] No network call blocks TUI startup or the Bubble Tea event loop; a
-  failed/slow check degrades silently.
+- [ ] The update check never blocks TUI startup and never installs
+  anything automatically — it only ever informs; `thicket update` remains
+  a separate, user-initiated action.
+- [ ] A failed/slow/timed-out check degrades silently — no toast, no
+  error, no stderr output.
 - [ ] `THICKET_NO_UPDATE_CHECK` disables the update check entirely.
-- [ ] `README.md` and `man/thicket.1` document the new subcommand and the
-  opt-out.
-</content>
+- [ ] `README.md`, `man/thicket.1`, and `AGENTS.md` document the new
+  subcommand, the opt-out, and the narrowed concurrency invariant.
