@@ -1,0 +1,33 @@
+name: Documentation
+description: Missing, unclear, or incorrect documentation (README, man page, in-app help, --help)
+labels: ["documentation"]
+body:
+  - type: dropdown
+    id: location
+    attributes:
+      label: Which doc is affected?
+      options:
+        - README.md
+        - man/thicket.1
+        - In-app help screen (? key) / internal/tui/help.go
+        - --help output
+        - Design spec / plan doc (docs/superpowers/**)
+        - AGENTS.md
+        - Other (specify below)
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's wrong or missing?
+      description: Quote the current text if something is inaccurate, or describe the gap if something is missing.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested wording or fix (optional)
+    validations:
+      required: false
