@@ -1832,6 +1832,9 @@ func TestUpdate_FindEnterOnEmptyResultsIsNoop(t *testing.T) {
 	if m.activePath != prevPath || m.activeCursor != prevCursor {
 		t.Fatalf("expected no relocation on a no-match Enter: activePath=%q activeCursor=%d", m.activePath, m.activeCursor)
 	}
+	if m.findQuery != "zzzznomatch" {
+		t.Fatalf("expected findQuery to survive a no-match Enter so the user can keep typing, got %q", m.findQuery)
+	}
 }
 
 func TestUpdate_FindEnterOnGrandchildMatchRelocatesTwoLevelsDeep(t *testing.T) {
@@ -1852,5 +1855,43 @@ func TestUpdate_FindEnterOnGrandchildMatchRelocatesTwoLevelsDeep(t *testing.T) {
 	}
 	if m.activeEntries[m.activeCursor].Name != "deep.txt" {
 		t.Fatalf("expected cursor on deep.txt, got %+v", m.activeEntries[m.activeCursor])
+	}
+}
+
+func TestUpdate_FindEnterOnUnreadableRelocationTargetSetsStatusErrAndExits(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission bits")
+	}
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("leaf")})
+	m = updated.(Model)
+
+	sub := filepath.Join(root, "sub")
+	if err := os.Chmod(sub, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(sub, 0o755) })
+
+	prevEntries, prevCursor := m.activeEntries, m.activeCursor
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("Enter on an unreadable relocation target must not quit")
+	}
+	if m.findMode {
+		t.Fatal("expected findMode == false: a stale walk snapshot is not re-shown on relocation failure")
+	}
+	if m.statusErr == "" {
+		t.Fatal("expected statusErr to be set")
+	}
+	if m.activePath != root {
+		t.Fatalf("activePath changed despite relocation failure: %q, want unchanged %q", m.activePath, root)
+	}
+	if m.activeCursor != prevCursor || len(m.activeEntries) != len(prevEntries) {
+		t.Fatalf("expected activeEntries/activeCursor untouched on relocation failure: cursor=%d entries=%+v", m.activeCursor, m.activeEntries)
 	}
 }

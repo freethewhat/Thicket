@@ -360,7 +360,13 @@ func (m *Model) moveFindCursor(delta int) {
 // commitFindSelection relocates activePath/activeCursor to the selected
 // match's parent directory (spec §5's Enter row) and exits find mode. A
 // no-op when findCursor is -1 (empty walk, or the current query matches
-// nothing) — find mode stays open so the user can keep typing.
+// nothing) — find mode stays open so the user can keep typing. If the
+// relocation target's ListDir fails (the walk snapshot went stale — the
+// match's parent directory was removed or its permissions changed after
+// the walk but before Enter), statusErr is set and find mode is exited
+// anyway, unlike the marks list's analogous Enter failure which stays
+// open: re-showing the now-stale find results would be misleading, so
+// this deliberately drops back to the plain listing instead.
 func (m *Model) commitFindSelection() {
 	filtered := filterWalk(m.findResults, m.findQuery)
 	if m.findCursor < 0 || m.findCursor >= len(filtered) {
