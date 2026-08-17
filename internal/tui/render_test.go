@@ -380,7 +380,7 @@ func TestView_HelpModeShowsKeybindingsAndHidesColumns(t *testing.T) {
 func TestView_HelpScreenKeyColumnFitsWidestRow(t *testing.T) {
 	root := setupFixture(t)
 	m := newTestModel(t, root)
-	m.height = 26 // tall enough that visibleRows() >= len(Keybindings)+2, so no row is clipped
+	m.height = 24 // tall enough that visibleRows() >= len(Keybindings)+2, so no row is clipped
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	m = updated.(Model)
@@ -561,7 +561,7 @@ func TestView_StatusLineMarksListSurfacesStatusErr(t *testing.T) {
 func TestView_HelpScreenStaysWithinPaneHeight(t *testing.T) {
 	root := setupFixture(t)
 	m := newTestModel(t, root)
-	m.height = 12 // visibleRows() (8) < len(Keybindings)+2 (18)
+	m.height = 12 // visibleRows() (8) < len(Keybindings)+2 (19)
 	m.width = 100
 	m.helpMode = true
 
@@ -696,8 +696,9 @@ func TestView_FindModeSymlinkAtFullWidthDoesNotPushOutNextEntry(t *testing.T) {
 // TestView_FindModeScrollsToKeepCursorVisible covers a review defect:
 // findCursor is clamped against the full filtered result list (up to the
 // walk cap, far larger than the visible rows), so renderFind must track
-// it with a scrolling window (mirroring scrollStartFor's use in
-// buildAncestors/buildPreview) instead of always rendering from index 0.
+// it with a persisted, user-driven scroll window (m.findScroll, advanced
+// via moveFindCursor/clampFindScroll) instead of always rendering from
+// index 0.
 func TestView_FindModeScrollsToKeepCursorVisible(t *testing.T) {
 	root := setupFixture(t)
 	m := newTestModel(t, root)
@@ -710,7 +711,7 @@ func TestView_FindModeScrollsToKeepCursorVisible(t *testing.T) {
 		entries[i] = fsutil.WalkEntry{Entry: fsutil.Entry{Name: name}, RelPath: name}
 	}
 	m.findResults = entries
-	m.findCursor = 9
+	m.moveFindCursor(9) // 0 -> 9, clamping findScroll along the way
 
 	out := m.renderFind(m.visibleRows())
 

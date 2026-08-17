@@ -391,16 +391,15 @@ func (m Model) renderFind(rows int) string {
 		// One row is reserved at the bottom for the truncated indicator
 		// when present, so the scrolling window below sizes itself to
 		// the remaining entry rows rather than the full pane height.
-		entryRows := rows
-		if m.findTruncated && entryRows > 1 {
-			entryRows--
-		}
+		entryRows := m.findEntryRows(rows)
 		// findCursor indexes into the full filtered list (up to the walk
-		// cap), which can be far larger than entryRows — mirror
-		// buildAncestors/buildPreview's use of scrollStartFor to keep the
-		// highlighted row within the visible window instead of always
-		// starting at index 0.
-		start := scrollStartFor(m.findCursor, entryRows)
+		// cap), which can be far larger than entryRows. Unlike
+		// buildAncestors/buildPreview's scrollStartFor (which has no
+		// user-driven cursor and pins the highlight to the bottom row),
+		// find mode's cursor is user-driven, so the window start is the
+		// persisted, incrementally-clamped m.findScroll (see
+		// clampFindScroll in update.go) rather than recomputed here.
+		start := m.findScroll
 		end := start + entryRows
 		if end > len(filtered) {
 			end = len(filtered)
@@ -438,4 +437,16 @@ func (m Model) renderFind(rows int) string {
 	content := strings.Join(lines, "\n")
 	inner := lipgloss.NewStyle().Width(width).Height(rows).MaxHeight(rows).Render(content)
 	return activePaneStyle.Render(inner)
+}
+
+// findEntryRows returns how many of rows rows are available for find
+// result entries: one is reserved at the bottom for the truncated
+// indicator when findTruncated is set (and rows leaves at least one row
+// left over for an entry). Shared between renderFind's window sizing and
+// update.go's clampFindScroll so the two always agree on window size.
+func (m Model) findEntryRows(rows int) int {
+	if m.findTruncated && rows > 1 {
+		return rows - 1
+	}
+	return rows
 }

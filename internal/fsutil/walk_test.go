@@ -42,11 +42,11 @@ func TestWalkSubtree_FindsNestedFilesAndDirs(t *testing.T) {
 		t.Fatal("expected truncated == false")
 	}
 	want := map[string]bool{
-		"sub":                false,
-		"sub/grand":          false,
+		"sub":       false,
+		"sub/grand": false,
 		filepath.Join("sub", "grand", "deep.txt"): false,
-		filepath.Join("sub", "leaf.txt"):           false,
-		"file.txt":                                 false,
+		filepath.Join("sub", "leaf.txt"):          false,
+		"file.txt":                                false,
 	}
 	for _, e := range entries {
 		if _, ok := want[e.RelPath]; ok {

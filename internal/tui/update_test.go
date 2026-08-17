@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -1678,6 +1679,75 @@ func TestUpdate_FindUpDownMovesResultCursorClampedAtEnds(t *testing.T) {
 	}
 	if m.findCursor != n-1 {
 		t.Fatalf("Down past the end must clamp: findCursor = %d, want %d", m.findCursor, n-1)
+	}
+}
+
+// TestUpdate_FindDownScrollsWindowByExactlyOneRowAtATime covers the
+// find-cursor scrolling regression: renderFind used to derive its window
+// start from scrollStartFor(findCursor, rows), which recomputes from
+// scratch on every render and therefore always pins the cursor to the
+// last visible row once it scrolls past the first screenful — for both
+// Down and Up. findScroll is now a persisted offset (mirroring
+// activeScroll/clampScroll for the Miller column): repeated Down presses
+// should advance the window by exactly one row at a time once the cursor
+// reaches the bottom of the window (not snap to some other position),
+// and a single Up press afterward should move the highlight up within
+// the still-stationary window rather than immediately re-pinning it to
+// the bottom row again.
+func TestUpdate_FindDownScrollsWindowByExactlyOneRowAtATime(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.height = 7 // visibleRows() == 3
+	m.width = 100
+	m.findMode = true
+	entries := make([]fsutil.WalkEntry, 10)
+	for i := range entries {
+		name := fmt.Sprintf("n%02d", i)
+		entries[i] = fsutil.WalkEntry{Entry: fsutil.Entry{Name: name}, RelPath: name}
+	}
+	m.findResults = entries
+	m.findCursor = 0
+	m.findScroll = 0
+
+	rows := m.visibleRows() // 3
+	prevScroll := m.findScroll
+	for i := 1; i < len(entries); i++ {
+		updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = updated.(Model)
+
+		if m.findCursor != i {
+			t.Fatalf("step %d: findCursor = %d, want %d", i, m.findCursor, i)
+		}
+		if m.findCursor < m.findScroll || m.findCursor >= m.findScroll+rows {
+			t.Fatalf("step %d: cursor %d not within visible window [%d, %d)", i, m.findCursor, m.findScroll, m.findScroll+rows)
+		}
+		wantDelta := 0
+		if m.findCursor >= rows {
+			wantDelta = 1
+		}
+		if m.findScroll != prevScroll+wantDelta {
+			t.Fatalf("step %d: findScroll = %d, want %d (advance by exactly one row once past the window, not jump)", i, m.findScroll, prevScroll+wantDelta)
+		}
+		prevScroll = m.findScroll
+
+		out := m.renderFind(rows)
+		if !strings.Contains(out, entries[i].RelPath) {
+			t.Fatalf("step %d: expected cursor entry %q visible:\n%s", i, entries[i].RelPath, out)
+		}
+	}
+
+	scrollBeforeUp := m.findScroll
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated.(Model)
+	if m.findScroll != scrollBeforeUp {
+		t.Fatalf("Up within an already-scrolled window must not re-pin it: findScroll = %d, want unchanged %d", m.findScroll, scrollBeforeUp)
+	}
+	if m.findCursor != len(entries)-2 {
+		t.Fatalf("findCursor after Up = %d, want %d", m.findCursor, len(entries)-2)
+	}
+	out := m.renderFind(rows)
+	if !strings.Contains(out, entries[len(entries)-2].RelPath) {
+		t.Fatalf("expected cursor entry %q visible after Up:\n%s", entries[len(entries)-2].RelPath, out)
 	}
 }
 

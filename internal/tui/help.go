@@ -31,7 +31,7 @@ var Keybindings = []KeyBinding{
 	{".", "Toggle hidden (dotfile) visibility (default off)"},
 	{"r", "Refresh the active directory's listing"},
 	{"/", "Type-ahead search the active column"},
-	{"f", "Recursive find: type to filter files/dirs under the active directory; Enter jumps there, Esc cancels"},
+	{"f", "Recursive find under the active directory's tree"},
 	{"?", "Toggle this help screen"},
 	{"m", "Bookmark the active directory under a letter"},
 	{"`", "Jump to a bookmarked directory by letter"},

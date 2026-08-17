@@ -14,7 +14,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.clampScroll()
-		return m, nil
+		if m.findMode {
+			m.clampFindScroll(m.findEntryRows(m.visibleRows()))
+		}
 	case tea.KeyMsg:
 		if msg.Type == tea.KeyCtrlC {
 			m.quitting = true
@@ -278,6 +280,7 @@ func (m *Model) enterFindMode() {
 	m.findResults = results
 	m.findTruncated = truncated
 	m.findCursor = -1
+	m.findScroll = 0
 	if len(results) > 0 {
 		m.findCursor = 0
 	}
@@ -291,7 +294,6 @@ func (m *Model) exitFindMode() {
 	m.findMode = false
 	m.findQuery = ""
 }
-
 
 // handleFindKey processes one key while findMode is true (spec §5).
 // Discriminates on msg.Type, not msg.String() — see Global Constraints.
@@ -331,9 +333,12 @@ func (m *Model) appendFindQuery(runes ...rune) {
 }
 
 // applyFindFilter resets findCursor against filterWalk(findResults,
-// findQuery): 0 if the filtered view is non-empty, else -1.
+// findQuery): 0 if the filtered view is non-empty, else -1. findScroll
+// resets to 0 alongside it — the filtered view just changed, so the old
+// scroll window no longer corresponds to anything meaningful.
 func (m *Model) applyFindFilter() {
 	filtered := filterWalk(m.findResults, m.findQuery)
+	m.findScroll = 0
 	if len(filtered) == 0 {
 		m.findCursor = -1
 		return
@@ -342,7 +347,8 @@ func (m *Model) applyFindFilter() {
 }
 
 // moveFindCursor moves findCursor by delta within the current filtered
-// view, clamped at both ends. No-op if the filtered view is empty.
+// view, clamped at both ends, then nudges findScroll just enough to keep
+// it visible. No-op if the filtered view is empty.
 func (m *Model) moveFindCursor(delta int) {
 	filtered := filterWalk(m.findResults, m.findQuery)
 	if len(filtered) == 0 {
@@ -354,6 +360,27 @@ func (m *Model) moveFindCursor(delta int) {
 	}
 	if last := len(filtered) - 1; m.findCursor > last {
 		m.findCursor = last
+	}
+	m.clampFindScroll(m.findEntryRows(m.visibleRows()))
+}
+
+// clampFindScroll mirrors clampScroll's persisted-scroll convention for
+// findScroll/findCursor: nudge the window just enough to keep findCursor
+// visible within rows rows, rather than scrollStartFor's pin-to-bottom
+// behavior used by the derived ancestor/preview columns, which have no
+// user-driven cursor of their own.
+func (m *Model) clampFindScroll(rows int) {
+	if rows <= 0 || m.findCursor < 0 {
+		return
+	}
+	if m.findCursor < m.findScroll {
+		m.findScroll = m.findCursor
+	}
+	if m.findCursor >= m.findScroll+rows {
+		m.findScroll = m.findCursor - rows + 1
+	}
+	if m.findScroll < 0 {
+		m.findScroll = 0
 	}
 }
 
