@@ -1,0 +1,98 @@
+name: Bug Report
+description: Report unexpected or broken behavior in thicket
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Reproduction steps are the single most
+        valuable part of this report — a bug that can't be reproduced is
+        hard to diagnose or fix. Please be as exact as possible.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: A concise description of what's wrong.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: >
+        An exact, numbered sequence someone else could follow to trigger
+        the same bug. Include the starting directory/fixture layout if
+        relevant (e.g. symlinks, permission-denied dirs, FIFOs).
+      placeholder: |
+        1. `th /path/to/dir`
+        2. Press ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What actually happened. Include the exact status-line error text, if any.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: thicket version / commit
+      description: Output of `thicket --version` if available, otherwise the git commit/tag you built from.
+      placeholder: e.g. commit abc1234, or "built from main on 2026-08-16"
+    validations:
+      required: true
+
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal emulator and $TERM
+      description: >
+        Rendering (color/border detection, column widths) is derived live
+        from the tty via lipgloss — many rendering bugs are terminal-specific.
+      placeholder: e.g. xterm-256color / kitty / tmux over xterm-256color
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: OS / distro
+      description: thicket is Linux-only; distro/kernel can still matter (filesystem, permissions).
+      placeholder: e.g. Arch Linux, kernel 6.12
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output, logs, or screenshot
+      description: Paste terminal output, the status-line error, or attach a screenshot/asciinema recording.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: regression
+    attributes:
+      label: Is this a regression?
+      description: Did this work correctly in a previous version/commit?
+      options:
+        - "Not sure / first time using thicket"
+        - "No, this has never worked"
+        - "Yes, it worked before (please note the last-known-good version/commit above)"
+    validations:
+      required: true
