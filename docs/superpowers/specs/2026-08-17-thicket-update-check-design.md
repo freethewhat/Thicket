@@ -144,6 +144,7 @@ func (m Model) Init() tea.Cmd {
 }
 ```
 
+```go
 type updateAvailableMsg struct{ tag string }
 type clearUpdateNoticeMsg struct{}
 

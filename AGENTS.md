@@ -83,17 +83,18 @@ Three-layer module; `cmd/thicket` depends on `internal/tui` and directly on
 th (shell function) → thicket binary (/dev/tty for UI) → stdout: chosen path
                                 │
                     cmd/thicket/main.go
-                          │                                      │
-                   internal/tui                                  │
-            (Model/Update/View,                                  │
-             Bubble Tea)                                         │
-        │                 │           │                          │
-        │                 │           └───────────┬──────────────┘
-        ▼                 ▼                       ▼
-        internal/fsutil   internal/update         internal/marks (Load,
-        (ListDir,         (LatestTag,             Save, DefaultPath)
-         ReadFilePreview,  IsNewer, Run)
-         WalkSubtree)
+              (also calls marks.DefaultPath() directly,
+               and internal/update.Run for the `update`
+               subcommand — see below)
+                                │
+                         internal/tui
+                   (Model/Update/View, Bubble Tea)
+                │                │                │
+                ▼                ▼                ▼
+       internal/fsutil    internal/update    internal/marks
+       (ListDir,           (LatestTag,        (Load, Save,
+        ReadFilePreview,    IsNewer, Run)      DefaultPath)
+        WalkSubtree)
 ```
 
 ## Key Directories
