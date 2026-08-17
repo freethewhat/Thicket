@@ -1564,3 +1564,204 @@ func TestUpdate_CtrlCQuitsEvenDuringFind(t *testing.T) {
 		t.Fatal("expected selected == false on Ctrl-C")
 	}
 }
+
+func TestUpdate_FindTypingFiltersResultsLive(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("leaf")})
+	m = updated.(Model)
+
+	filtered := filterWalk(m.findResults, m.findQuery)
+	if len(filtered) != 1 || filtered[0].RelPath != filepath.Join("sub", "leaf.txt") {
+		t.Fatalf("filtered results = %+v, want just sub/leaf.txt", filtered)
+	}
+	if m.findCursor != 0 {
+		t.Fatalf("findCursor = %d, want 0", m.findCursor)
+	}
+}
+
+func TestUpdate_FindNoMatchSetsCursorToNegativeOne(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("zzzznomatch")})
+	m = updated.(Model)
+
+	if m.findCursor != -1 {
+		t.Fatalf("findCursor = %d, want -1", m.findCursor)
+	}
+}
+
+func TestUpdate_FindBackspaceShrinksQueryAndRefilters(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("leafx")})
+	m = updated.(Model)
+	if len(filterWalk(m.findResults, m.findQuery)) != 0 {
+		t.Fatal("precondition: 'leafx' should match nothing")
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m = updated.(Model)
+
+	if m.findQuery != "leaf" {
+		t.Fatalf("findQuery = %q, want %q", m.findQuery, "leaf")
+	}
+	if m.findCursor != 0 {
+		t.Fatalf("findCursor = %d, want 0 after backspace re-matches", m.findCursor)
+	}
+}
+
+func TestUpdate_FindBackspaceOnEmptyQueryExitsWithNoRelocation(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	prevPath := m.activePath
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m = updated.(Model)
+
+	if m.findMode {
+		t.Fatal("expected findMode == false after Backspace on an empty query")
+	}
+	if m.activePath != prevPath {
+		t.Fatalf("activePath = %q, want unchanged %q", m.activePath, prevPath)
+	}
+}
+
+func TestUpdate_FindSpaceKeyAppendsLiteralSpace(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
+	m = updated.(Model)
+
+	if m.findQuery != "a b" {
+		t.Fatalf("findQuery = %q, want %q", m.findQuery, "a b")
+	}
+}
+
+func TestUpdate_FindUpDownMovesResultCursorClampedAtEnds(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	n := len(filterWalk(m.findResults, m.findQuery))
+	if n < 2 {
+		t.Fatalf("precondition: fixture must yield at least 2 walk results, got %d", n)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = updated.(Model)
+	if m.findCursor != 0 {
+		t.Fatalf("Up at index 0 must clamp: findCursor = %d, want 0", m.findCursor)
+	}
+
+	for i := range n + 2 {
+		_ = i
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m = updated.(Model)
+	}
+	if m.findCursor != n-1 {
+		t.Fatalf("Down past the end must clamp: findCursor = %d, want %d", m.findCursor, n-1)
+	}
+}
+
+func TestUpdate_FindLeftRightArrowsAreNoOps(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	beforeCursor, beforeQuery := m.findCursor, m.findQuery
+
+	for _, kt := range []tea.KeyType{tea.KeyLeft, tea.KeyRight} {
+		updated, cmd := m.Update(tea.KeyMsg{Type: kt})
+		m = updated.(Model)
+		if cmd != nil {
+			t.Fatalf("key %v produced a command during find", kt)
+		}
+	}
+
+	if m.findCursor != beforeCursor || m.findQuery != beforeQuery {
+		t.Fatalf("Left/Right must be no-ops during find: cursor=%d query=%q, want %d/%q", m.findCursor, m.findQuery, beforeCursor, beforeQuery)
+	}
+}
+
+func TestUpdate_FindLettersLikeQAndHDoNotTriggerNavCommands(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("'q' during find must not quit")
+	}
+	if !m.findMode {
+		t.Fatal("expected still in findMode")
+	}
+	if m.findQuery != "q" {
+		t.Fatalf("findQuery = %q, want %q (q must be query text, not a command)", m.findQuery, "q")
+	}
+}
+
+func TestUpdate_FindTabAndOtherControlKeysAreNoOps(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	beforeCursor, beforeQuery := m.findCursor, m.findQuery
+
+	for _, kt := range []tea.KeyType{tea.KeyTab, tea.KeyCtrlU, tea.KeyHome, tea.KeyPgUp, tea.KeyF1} {
+		updated, cmd := m.Update(tea.KeyMsg{Type: kt})
+		m = updated.(Model)
+		if cmd != nil {
+			t.Fatalf("key %v produced a command during find", kt)
+		}
+	}
+
+	if m.findCursor != beforeCursor || m.findQuery != beforeQuery {
+		t.Fatalf("expected no state change, got cursor=%d query=%q", m.findCursor, m.findQuery)
+	}
+	if !m.findMode {
+		t.Fatal("expected still in findMode")
+	}
+}
+
+func TestUpdate_WindowResizeWorksDuringFind(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.WindowSizeMsg{Width: 60, Height: 15})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("resize must not quit the program")
+	}
+	if m.width != 60 || m.height != 15 {
+		t.Fatalf("width/height = %d/%d, want 60/15", m.width, m.height)
+	}
+	if !m.findMode || m.findQuery != "x" {
+		t.Fatalf("resize must not disturb find state: findMode=%v findQuery=%q", m.findMode, m.findQuery)
+	}
+}

@@ -292,14 +292,75 @@ func (m *Model) exitFindMode() {
 	m.findQuery = ""
 }
 
-// handleFindKey is completed in Task 4; a placeholder that only handles
-// Esc is enough for this task's tests (Ctrl-C never reaches here — it's
-// intercepted earlier in Update, before any mode branch).
+
+// handleFindKey processes one key while findMode is true (spec §5).
+// Discriminates on msg.Type, not msg.String() — see Global Constraints.
+// Any msg.Type not matched by a case below (arrows other than Up/Down,
+// Tab, Ctrl-U, Home, PageUp, F-keys, ...) is an explicit no-op.
 func (m *Model) handleFindKey(msg tea.KeyMsg) {
-	if msg.Type == tea.KeyEsc {
+	switch msg.Type {
+	case tea.KeyRunes:
+		m.appendFindQuery(msg.Runes...)
+	case tea.KeySpace:
+		m.appendFindQuery(' ')
+	case tea.KeyBackspace:
+		if m.findQuery == "" {
+			m.exitFindMode()
+			return
+		}
+		runes := []rune(m.findQuery)
+		m.findQuery = string(runes[:len(runes)-1])
+		m.applyFindFilter()
+	case tea.KeyUp:
+		m.moveFindCursor(-1)
+	case tea.KeyDown:
+		m.moveFindCursor(1)
+	case tea.KeyEnter:
+		m.commitFindSelection()
+	case tea.KeyEsc:
 		m.exitFindMode()
 	}
 }
+
+// appendFindQuery adds runes to findQuery and re-runs the filter. A single
+// KeyMsg can carry more than one rune (bracketed paste, composed input),
+// so callers pass every rune from one message, not just the first.
+func (m *Model) appendFindQuery(runes ...rune) {
+	m.findQuery += string(runes)
+	m.applyFindFilter()
+}
+
+// applyFindFilter resets findCursor against filterWalk(findResults,
+// findQuery): 0 if the filtered view is non-empty, else -1.
+func (m *Model) applyFindFilter() {
+	filtered := filterWalk(m.findResults, m.findQuery)
+	if len(filtered) == 0 {
+		m.findCursor = -1
+		return
+	}
+	m.findCursor = 0
+}
+
+// moveFindCursor moves findCursor by delta within the current filtered
+// view, clamped at both ends. No-op if the filtered view is empty.
+func (m *Model) moveFindCursor(delta int) {
+	filtered := filterWalk(m.findResults, m.findQuery)
+	if len(filtered) == 0 {
+		return
+	}
+	m.findCursor += delta
+	if m.findCursor < 0 {
+		m.findCursor = 0
+	}
+	if last := len(filtered) - 1; m.findCursor > last {
+		m.findCursor = last
+	}
+}
+
+// commitFindSelection is completed in Task 5; a placeholder that always
+// no-ops is enough for this task's tests, none of which press Enter.
+func (m *Model) commitFindSelection() {}
+
 
 // handleSearchKey processes one key while searchMode is true (spec §4).
 // Discriminates on msg.Type, not msg.String() — see Global Constraints.
