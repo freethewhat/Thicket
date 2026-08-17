@@ -63,8 +63,13 @@ bin_dir="${PREFIX}/bin"
 man_dir="${PREFIX}/share/man/man1"
 shell_dir="${PREFIX}/share/thicket/shell"
 
+writable_prefix_dir="$PREFIX"
+while [ ! -e "$writable_prefix_dir" ]; do
+	writable_prefix_dir="$(dirname "$writable_prefix_dir")"
+done
+
 sudo_cmd=""
-if [ ! -w "$bin_dir" ] && [ "$(id -u)" -ne 0 ]; then
+if [ ! -w "$writable_prefix_dir" ] && [ "$(id -u)" -ne 0 ]; then
 	need sudo
 	sudo_cmd="sudo"
 fi
