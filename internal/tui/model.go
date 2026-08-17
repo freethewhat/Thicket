@@ -26,9 +26,24 @@ type Model struct {
 	searchNoMatch    bool
 	searchPrevCursor int
 	// helpMode: in-app help screen state (? toggles it open/closed; see
-	// internal/tui/help.go). Mutually exclusive with searchMode — Update's
-	// early-return dispatch order guarantees only one is ever active.
+	// internal/tui/help.go). Mutually exclusive with searchMode/findMode/
+	// markSetPending/markJumpPending/marksListMode — Update's early-return
+	// dispatch order guarantees only one is ever active.
 	helpMode bool
+	// findMode/findQuery/findResults/findCursor/findTruncated: recursive
+	// find state (spec
+	// docs/superpowers/specs/2026-08-16-thicket-recursive-find-design.md).
+	// Zero-valued at construction, same as searchMode/helpMode. findResults
+	// is captured once when f is pressed and held for the session; it is
+	// never re-walked while findMode is true, only re-filtered via
+	// filterWalk. Mutually exclusive with searchMode/helpMode/
+	// markSetPending/markJumpPending/marksListMode — Update's early-return
+	// dispatch order guarantees only one mode is ever active.
+	findMode      bool
+	findQuery     string
+	findResults   []fsutil.WalkEntry
+	findCursor    int // index into filterWalk(findResults, findQuery); -1 when that view is empty
+	findTruncated bool
 	// markTable/marksPath/markSetPending/markJumpPending/marksListMode/
 	// marksCursor: directory marks (bookmarks) state (spec
 	// docs/superpowers/specs/2026-08-16-thicket-directory-marks-design.md

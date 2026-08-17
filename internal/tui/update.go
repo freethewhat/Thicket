@@ -36,6 +36,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.handleSearchKey(msg)
 			return m, nil
 		}
+		if m.findMode {
+			m.handleFindKey(msg)
+			return m, nil
+		}
 		if m.markSetPending {
 			m.handleMarkSetKey(msg)
 			return m, nil
@@ -75,6 +79,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reload()
 		case "/":
 			m.enterSearchMode()
+		case "f":
+			m.enterFindMode()
 		case "?":
 			m.helpMode = true
 		case "m":
@@ -254,6 +260,44 @@ func (m *Model) exitSearchMode(restoreCursor bool) {
 	if restoreCursor {
 		m.activeCursor = m.searchPrevCursor
 		m.clampScroll()
+	}
+}
+
+// enterFindMode runs a one-time recursive walk of activePath's subtree
+// (spec §5) and opens the full-screen find-mode result list. On a walk
+// error (activePath itself unreadable), statusErr is set and find mode is
+// never entered — mirrors handleRight's treatment of a failed ListDir.
+func (m *Model) enterFindMode() {
+	results, truncated, err := fsutil.WalkSubtree(m.activePath, m.showHidden)
+	if err != nil {
+		m.statusErr = err.Error()
+		return
+	}
+	m.findMode = true
+	m.findQuery = ""
+	m.findResults = results
+	m.findTruncated = truncated
+	m.findCursor = -1
+	if len(results) > 0 {
+		m.findCursor = 0
+	}
+	m.statusErr = ""
+}
+
+// exitFindMode closes find mode without touching activePath/activeCursor.
+// commitFindSelection (Task 5) relocates separately, before calling this;
+// every other exit path (Esc, empty-backspace) never relocates.
+func (m *Model) exitFindMode() {
+	m.findMode = false
+	m.findQuery = ""
+}
+
+// handleFindKey is completed in Task 4; a placeholder that only handles
+// Esc is enough for this task's tests (Ctrl-C never reaches here — it's
+// intercepted earlier in Update, before any mode branch).
+func (m *Model) handleFindKey(msg tea.KeyMsg) {
+	if msg.Type == tea.KeyEsc {
+		m.exitFindMode()
 	}
 }
 

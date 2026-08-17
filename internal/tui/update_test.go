@@ -1460,3 +1460,107 @@ func TestFilterWalk_NoMatchReturnsEmpty(t *testing.T) {
 		t.Fatalf("filterWalk(\"zzz\") = %+v, want empty", got)
 	}
 }
+
+func TestUpdate_FEntersFindModeAndWalksSubtree(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("f must not quit the program")
+	}
+	if !m.findMode {
+		t.Fatal("expected findMode == true after f")
+	}
+	if m.findQuery != "" {
+		t.Fatalf("findQuery = %q, want empty", m.findQuery)
+	}
+	if len(m.findResults) == 0 {
+		t.Fatal("expected findResults populated from the fixture's subtree")
+	}
+	if m.findCursor != 0 {
+		t.Fatalf("findCursor = %d, want 0 (non-empty walk)", m.findCursor)
+	}
+}
+
+func TestUpdate_FOnUnreadableRootSetsStatusErrAndSkipsFindMode(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses permission checks")
+	}
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	if err := os.Chmod(root, 0o000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	t.Cleanup(func() { os.Chmod(root, 0o755) })
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	if m.findMode {
+		t.Fatal("expected findMode to stay false when the walk root is unreadable")
+	}
+	if m.statusErr == "" {
+		t.Fatal("expected statusErr set")
+	}
+}
+
+func TestUpdate_FOnEmptyDirectoryOpensFindModeWithNoResults(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, filepath.Join(root, "sub", "grand"))
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	if !m.findMode {
+		t.Fatal("expected findMode == true even for an empty subtree")
+	}
+	if len(m.findResults) != 0 {
+		t.Fatalf("findResults = %+v, want empty", m.findResults)
+	}
+	if m.findCursor != -1 {
+		t.Fatalf("findCursor = %d, want -1", m.findCursor)
+	}
+}
+
+func TestUpdate_FindEscExitsWithNoRelocation(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	prevPath, prevCursor := m.activePath, m.activeCursor
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = updated.(Model)
+
+	if cmd != nil {
+		t.Fatal("Esc during find must not quit the program")
+	}
+	if m.findMode {
+		t.Fatal("expected findMode == false after Esc")
+	}
+	if m.activePath != prevPath || m.activeCursor != prevCursor {
+		t.Fatalf("Esc must not relocate: activePath=%q activeCursor=%d, want %q/%d", m.activePath, m.activeCursor, prevPath, prevCursor)
+	}
+}
+
+func TestUpdate_CtrlCQuitsEvenDuringFind(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("f")})
+	m = updated.(Model)
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = updated.(Model)
+
+	if cmd == nil {
+		t.Fatal("expected Ctrl-C to return tea.Quit")
+	}
+	if m.selected {
+		t.Fatal("expected selected == false on Ctrl-C")
+	}
+}
