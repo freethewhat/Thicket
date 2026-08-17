@@ -10,11 +10,13 @@ program's stdout. Module path: `thicket` (unpublished, local module).
 v1 scope is intentionally locked to navigation only — no file
 create/rename/delete/copy/move, no config file, no mouse support, no
 filesystem watching (see `docs/superpowers/specs/2026-08-15-thicket-tui-file-browser-design.md`
-§3). Two amendments to that non-goal list have shipped since: a
+§3). Three amendments to that non-goal list have shipped since: a
 `/`-triggered type-ahead cursor search within the active column
 (`docs/superpowers/specs/2026-08-16-thicket-type-ahead-search-design.md`),
-and vim/ranger-style directory marks/bookmarks
-(`docs/superpowers/specs/2026-08-16-thicket-directory-marks-design.md`).
+vim/ranger-style directory marks/bookmarks
+(`docs/superpowers/specs/2026-08-16-thicket-directory-marks-design.md`),
+and an `f`-triggered recursive find over the active directory's subtree
+(`docs/superpowers/specs/2026-08-16-thicket-recursive-find-design.md`).
 Every other v1 non-goal in §3 still holds.
 
 ## Architecture & Data Flow

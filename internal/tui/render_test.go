@@ -380,7 +380,7 @@ func TestView_HelpModeShowsKeybindingsAndHidesColumns(t *testing.T) {
 func TestView_HelpScreenKeyColumnFitsWidestRow(t *testing.T) {
 	root := setupFixture(t)
 	m := newTestModel(t, root)
-	m.height = 24 // tall enough that visibleRows() >= len(Keybindings)+2, so no row is clipped
+	m.height = 26 // tall enough that visibleRows() >= len(Keybindings)+2, so no row is clipped
 
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	m = updated.(Model)
