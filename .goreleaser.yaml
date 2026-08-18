@@ -42,6 +42,7 @@ changelog:
       - "^Merge branch"
 
 release:
+  prerelease: auto
   github:
     owner: freethewhat
     name: Thicket
