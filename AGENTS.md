@@ -10,13 +10,18 @@ program's stdout. Module path: `thicket` (unpublished, local module).
 v1 scope is intentionally locked to navigation only — no file
 create/rename/delete/copy/move, no config file, no mouse support, no
 filesystem watching (see `docs/superpowers/specs/2026-08-15-thicket-tui-file-browser-design.md`
-§3). Three amendments to that non-goal list have shipped since: a
+§3). Four amendments to that non-goal list have shipped since: a
 `/`-triggered type-ahead cursor search within the active column
 (`docs/superpowers/specs/2026-08-16-thicket-type-ahead-search-design.md`),
 vim/ranger-style directory marks/bookmarks
 (`docs/superpowers/specs/2026-08-16-thicket-directory-marks-design.md`),
-and an `f`-triggered recursive find over the active directory's subtree
-(`docs/superpowers/specs/2026-08-16-thicket-recursive-find-design.md`).
+an `f`-triggered recursive find over the active directory's subtree
+(`docs/superpowers/specs/2026-08-16-thicket-recursive-find-design.md`),
+and `y`/`Y` clipboard-yank keys
+(`docs/superpowers/specs/2026-08-18-thicket-clipboard-yank-design.md`) —
+the last of these does not reverse or narrow any non-goal line, since it
+only reads a path and calls an external clipboard mechanism; nothing on
+disk changes.
 Every other v1 non-goal in §3 still holds.
 
 ## Architecture & Data Flow
@@ -173,6 +178,12 @@ Manual run without installing: `go run ./cmd/thicket [path]`.
   primitives, run by its scheduler, not manually spawned. Do not
   introduce further `tea.Cmd`/goroutine/channel use elsewhere in
   `internal/tui` without updating this bullet again.
+  The `y`/`Y` clipboard-yank keys (`internal/tui/clipboard.go`) add a
+  second `tea.Tick` site (`dismissYankNoticeCmd`), auto-dismissing their
+  own status-line toast after 3s — the clipboard write itself
+  (`clipboard.Copy`) still runs synchronously inline on the Bubble Tea
+  event loop, same as `marks.Save`/`fsutil.ListDir` elsewhere; only the
+  *notice dismissal* uses `tea.Tick`.
 - **Dependency injection**: none needed/used — `fsutil` functions are
   called directly by `internal/tui`; no interfaces/mocks for the
   filesystem layer. Package-level lipgloss styles in `internal/tui` are
@@ -200,6 +211,8 @@ Manual run without installing: `go run ./cmd/thicket [path]`.
 | `internal/update/run.go` | `Run` — pipes the embedded `install.sh` to `sh` to perform the update |
 | `scripts/embed.go` | `//go:embed install.sh` — embeds the install script for `internal/update/run.go` |
 | `internal/tui/help.go` | `Keybindings` (single source of truth for the `?` help screen and `cmd/thicket --help`) and `renderHelp` |
+| `internal/clipboard/clipboard.go` | `Copy` — subprocess-based clipboard write trying wl-copy/xclip/xsel in preference order |
+| `internal/tui/clipboard.go` | `yankEntryPath`, `yankEntry`, `yankDir`, `yank` — the `y`/`Y` keys' clipboard-write logic and status-line notice |
 | `shell/thicket.bash`, `shell/thicket.zsh` | `th()` wrapper functions that `cd` the calling shell |
 | `man/thicket.1` | Troff man page — NAME/SYNOPSIS/OPTIONS/KEYS/EXIT STATUS/SHELL INTEGRATION, hand-maintained in sync with `internal/tui/help.go` and the README table |
 | `go.mod` | Module `thicket`, Go 1.24.6, pins `bubbletea` to v1.x (not v2) |
