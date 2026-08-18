@@ -13,8 +13,27 @@ import (
 
 const releasesURL = "https://api.github.com/repos/freethewhat/Thicket/releases/latest"
 
-// LatestTag fetches the tag_name of the latest GitHub release.
-func LatestTag(ctx context.Context) (string, error) {
+const releasesListURL = "https://api.github.com/repos/freethewhat/Thicket/releases"
+
+// ChannelStable and ChannelBeta name the two update channels LatestTag
+// accepts. Any channel value other than ChannelBeta (including "") is
+// treated as ChannelStable.
+const (
+	ChannelStable = "stable"
+	ChannelBeta   = "beta"
+)
+
+// LatestTag fetches the tag_name of the latest release on channel.
+// ChannelStable uses GET .../releases/latest, which GitHub's API defines
+// to exclude prereleases and drafts. ChannelBeta uses GET .../releases
+// (the list endpoint, confirmed newest-first by a live query against this
+// repo during design) and takes the first entry, which may itself be a
+// stable release if that's what was most recently cut — a beta-channel
+// user always tracks whatever is newest, prerelease or not.
+func LatestTag(ctx context.Context, channel string) (string, error) {
+	if channel == ChannelBeta {
+		return fetchLatestFromList(ctx, releasesListURL)
+	}
 	return fetchTag(ctx, releasesURL)
 }
 
@@ -52,6 +71,38 @@ func fetchTag(ctx context.Context, url string) (string, error) {
 		return "", fmt.Errorf("update: release response had no tag_name")
 	}
 	return body.TagName, nil
+}
+
+// fetchLatestFromList is LatestTag's ChannelBeta implementation with an
+// injectable URL, so tests can point it at an httptest.Server. Mirrors
+// fetchTag's error handling: a non-200 status or malformed JSON body both
+// error out before decoding, so neither can be mistaken for "no releases
+// exist yet".
+func fetchLatestFromList(ctx context.Context, url string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("update: unexpected status %d from %s", resp.StatusCode, url)
+	}
+
+	var body []struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", fmt.Errorf("update: decoding release list response: %w", err)
+	}
+	if len(body) == 0 || body[0].TagName == "" {
+		return "", fmt.Errorf("update: release list response had no releases")
+	}
+	return body[0].TagName, nil
 }
 
 // semver holds a parsed "vX.Y.Z" or "vX.Y.Z-pre" version string.

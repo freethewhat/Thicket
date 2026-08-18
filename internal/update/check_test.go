@@ -128,3 +128,54 @@ func TestFetchTag_ContextTimeout(t *testing.T) {
 		t.Fatalf("fetchTag: want a context-deadline error, got %v", err)
 	}
 }
+
+func TestFetchLatestFromList_HappyPath(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]string{
+			{"tag_name": "v1.3.0-beta.1"},
+			{"tag_name": "v1.2.0"},
+		})
+	}))
+	defer srv.Close()
+
+	tag, err := fetchLatestFromList(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatalf("fetchLatestFromList: %v", err)
+	}
+	if tag != "v1.3.0-beta.1" {
+		t.Errorf("tag = %q, want v1.3.0-beta.1", tag)
+	}
+}
+
+func TestFetchLatestFromList_EmptyListIsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]map[string]string{})
+	}))
+	defer srv.Close()
+
+	if _, err := fetchLatestFromList(context.Background(), srv.URL); err == nil {
+		t.Fatal("fetchLatestFromList: want error on empty list, got nil")
+	}
+}
+
+func TestFetchLatestFromList_404IsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	if _, err := fetchLatestFromList(context.Background(), srv.URL); err == nil {
+		t.Fatal("fetchLatestFromList: want error on 404, got nil")
+	}
+}
+
+func TestFetchLatestFromList_MalformedJSONIsError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("not json"))
+	}))
+	defer srv.Close()
+
+	if _, err := fetchLatestFromList(context.Background(), srv.URL); err == nil {
+		t.Fatal("fetchLatestFromList: want error on malformed JSON, got nil")
+	}
+}
