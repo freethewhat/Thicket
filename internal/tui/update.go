@@ -186,6 +186,7 @@ func (m *Model) handleRight() {
 		m.activeCursor = -1
 	}
 	m.activeScroll = 0
+	m.clampScroll()
 	m.statusErr = ""
 }
 

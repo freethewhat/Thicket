@@ -35,8 +35,8 @@ type Model struct {
 	// on to be correct, so it does not change the "derived from
 	// activePath plus two integers" model below.
 	cursorMemory map[string]int
-	showHidden    bool
-	statusErr     string
+	showHidden   bool
+	statusErr    string
 	// checkVersion/updateNotice: on-launch update-check state (spec
 	// docs/superpowers/specs/2026-08-17-thicket-update-check-design.md).
 	// checkVersion is set once via WithUpdateCheck before the Bubble Tea
