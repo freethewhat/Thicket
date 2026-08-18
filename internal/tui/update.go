@@ -102,7 +102,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clearUpdateNoticeMsg:
 		m.updateNotice = ""
 	case clearYankNoticeMsg:
-		m.yankNotice = ""
+		if msg.gen == m.yankGen {
+			m.yankNotice = ""
+		}
 	}
 	return m, nil
 }

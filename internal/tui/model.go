@@ -108,6 +108,14 @@ type Model struct {
 	// state — y/Y are direct-action keys with no follow-up keystroke to
 	// capture, so no *Pending/*Mode field is needed alongside it.
 	yankNotice string
+	// yankGen counts successful yanks, incremented each time yank()
+	// schedules a new dismiss tick. clearYankNoticeMsg carries the
+	// generation it was scheduled for; the handler only clears
+	// yankNotice when the message's generation still matches yankGen,
+	// so a stale tick from an earlier yank (superseded by a newer y/Y
+	// press within yankNoticeDuration) is a no-op instead of clearing
+	// the newer, still-current notice.
+	yankGen    int
 	width      int
 	height     int
 	quitting   bool

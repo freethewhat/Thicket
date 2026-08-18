@@ -17,8 +17,11 @@ var clipboardCopyFunc = clipboard.Copy
 const yankNoticeDuration = 3 * time.Second
 
 // clearYankNoticeMsg dismisses the toast set by a successful yank,
-// delivered by the tea.Tick started when the toast is shown.
-type clearYankNoticeMsg struct{}
+// delivered by the tea.Tick started when the toast is shown. gen is the
+// yankGen the tick was scheduled for; update.go's handler ignores the
+// message unless gen still matches the model's current yankGen, so a
+// stale tick from a superseded yank cannot clear a newer notice.
+type clearYankNoticeMsg struct{ gen int }
 
 // yankEntryPath returns the highlighted entry's absolute path — any
 // entry type, file or directory, unlike selectedDirPath (update.go),
@@ -43,9 +46,10 @@ func (m *Model) yankDir() tea.Cmd {
 }
 
 // yank writes path via clipboardCopyFunc. On success, yankNotice is set
-// (statusErr cleared) and a dismiss timer is scheduled. On failure,
-// statusErr is set (yankNotice cleared) — mutually exclusive, matching
-// every other statusErr-setting path in update.go.
+// (statusErr cleared), yankGen is incremented, and a dismiss timer
+// carrying the new generation is scheduled. On failure, statusErr is set
+// (yankNotice cleared) — mutually exclusive, matching every other
+// statusErr-setting path in update.go.
 func (m *Model) yank(path string) tea.Cmd {
 	if err := clipboardCopyFunc(path); err != nil {
 		m.statusErr = "yank: " + err.Error()
@@ -54,11 +58,12 @@ func (m *Model) yank(path string) tea.Cmd {
 	}
 	m.statusErr = ""
 	m.yankNotice = "yanked: " + path
-	return dismissYankNoticeCmd(yankNoticeDuration)
+	m.yankGen++
+	return dismissYankNoticeCmd(yankNoticeDuration, m.yankGen)
 }
 
-// dismissYankNoticeCmd returns a tea.Cmd that delivers clearYankNoticeMsg
-// after d elapses, via tea.Tick.
-func dismissYankNoticeCmd(d time.Duration) tea.Cmd {
-	return tea.Tick(d, func(time.Time) tea.Msg { return clearYankNoticeMsg{} })
+// dismissYankNoticeCmd returns a tea.Cmd that delivers
+// clearYankNoticeMsg{gen: gen} after d elapses, via tea.Tick.
+func dismissYankNoticeCmd(d time.Duration, gen int) tea.Cmd {
+	return tea.Tick(d, func(time.Time) tea.Msg { return clearYankNoticeMsg{gen: gen} })
 }

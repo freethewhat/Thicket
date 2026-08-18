@@ -2168,12 +2168,13 @@ func TestUpdate_ClearYankNoticeMsgClearsYankNotice(t *testing.T) {
 	root := setupFixture(t)
 	m := newTestModel(t, root)
 	m.yankNotice = "yanked: /some/path"
+	m.yankGen = 1
 
-	updated, _ := m.Update(clearYankNoticeMsg{})
+	updated, _ := m.Update(clearYankNoticeMsg{gen: 1})
 	m = updated.(Model)
 
 	if m.yankNotice != "" {
-		t.Errorf("yankNotice = %q, want empty after clearYankNoticeMsg", m.yankNotice)
+		t.Errorf("yankNotice = %q, want empty after clearYankNoticeMsg with matching gen", m.yankNotice)
 	}
 }
 
@@ -2184,8 +2185,42 @@ func TestYankNoticeDuration_IsThreeSeconds(t *testing.T) {
 }
 
 func TestDismissYankNoticeCmd_ProducesClearYankNoticeMsgAfterDuration(t *testing.T) {
-	msg := dismissYankNoticeCmd(time.Millisecond)()
-	if _, ok := msg.(clearYankNoticeMsg); !ok {
+	msg := dismissYankNoticeCmd(time.Millisecond, 7)()
+	got, ok := msg.(clearYankNoticeMsg)
+	if !ok {
 		t.Fatalf("dismissYankNoticeCmd(...)() = %#v, want clearYankNoticeMsg", msg)
+	}
+	if got.gen != 7 {
+		t.Fatalf("clearYankNoticeMsg.gen = %d, want 7", got.gen)
+	}
+}
+
+func TestUpdate_StaleClearYankNoticeMsgDoesNotClearNewerNotice(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	withStubClipboardCopy(t, func(string) error { return nil })
+
+	updated, firstCmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = updated.(Model)
+	if firstCmd == nil {
+		t.Fatal("first y: want non-nil dismiss tea.Cmd")
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = updated.(Model)
+	secondNotice := m.yankNotice
+	if secondNotice == "" {
+		t.Fatal("second y: want non-empty yankNotice")
+	}
+
+	staleMsg := firstCmd()
+	updated, _ = m.Update(staleMsg)
+	m = updated.(Model)
+
+	if m.yankNotice == "" {
+		t.Fatal("yankNotice cleared by a stale dismiss tick from an earlier yank; the newer notice should still be showing")
+	}
+	if m.yankNotice != secondNotice {
+		t.Fatalf("yankNotice = %q, want unchanged %q", m.yankNotice, secondNotice)
 	}
 }
