@@ -37,6 +37,8 @@ var Keybindings = []KeyBinding{
 	{"`", "Jump to a bookmarked directory by letter"},
 	{"'", "Open the marks list"},
 	{"d (in marks list)", "Delete the highlighted mark"},
+	{"y", "Copy the highlighted entry's path to the clipboard"},
+	{"Y", "Copy the active directory's own path to the clipboard"},
 }
 
 // KeyColWidth is wide enough to hold the longest Keys entry

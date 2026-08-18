@@ -799,3 +799,68 @@ func TestView_StatusLineMarksListStillShowsUpdateNotice(t *testing.T) {
 		t.Fatalf("statusLine() should still show updateNotice during marksListMode: %q", m.statusLine())
 	}
 }
+
+func TestView_StatusLineShowsYankNotice(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	m.yankNotice = "yanked: " + filepath.Join(root, "sub")
+
+	if !strings.Contains(m.statusLine(), "yanked:") {
+		t.Fatalf("statusLine() missing yankNotice: %q", m.statusLine())
+	}
+}
+
+func TestView_StatusLineStatusErrTakesPrecedenceOverYankNotice(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	m.yankNotice = "yanked: /some/path"
+	m.statusErr = "open /x: permission denied"
+
+	line := m.statusLine()
+	if !strings.Contains(line, "permission denied") {
+		t.Fatalf("statusLine() missing statusErr: %q", line)
+	}
+	if strings.Contains(line, "yanked:") {
+		t.Fatalf("statusLine() should not show yankNotice while statusErr is set: %q", line)
+	}
+}
+
+func TestView_StatusLineYankNoticeTakesPrecedenceOverUpdateNotice(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.width = 150
+	m.updateNotice = "update available: v9.9.9 — run 'thicket-bin update'"
+	m.yankNotice = "yanked: /some/path"
+
+	line := m.statusLine()
+	if !strings.Contains(line, "yanked:") {
+		t.Fatalf("statusLine() missing yankNotice: %q", line)
+	}
+	if strings.Contains(line, "update available") {
+		t.Fatalf("statusLine() should not show updateNotice while yankNotice is set: %q", line)
+	}
+}
+
+// TestView_HelpScreenListsYankKeybindings covers the new y/Y rows appended
+// to Keybindings. Like TestView_HelpScreenKeyColumnFitsWidestRow, it must
+// override the default test height: those rows are the two last entries
+// in the list, well past what newTestModel's default height leaves room
+// for once the help pane's MaxHeight clips overflow (spec §7-style
+// full-screen replacement, same clipping renderMarksList/renderFind use).
+func TestView_HelpScreenListsYankKeybindings(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.height = 26
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
+	m = updated.(Model)
+
+	out := m.View()
+	for _, want := range []string{"Copy the highlighted entry's path to the clipboard", "Copy the active directory's own path to the clipboard"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("help screen missing %q:\n%s", want, out)
+		}
+	}
+}
