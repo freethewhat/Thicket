@@ -89,6 +89,13 @@ when one exists (release builds only — a `go build`/`go run` source build
 reports version `dev` and never checks). Set `THICKET_NO_UPDATE_CHECK=1` to
 disable this check entirely.
 
+Set `THICKET_CHANNEL=beta` to track pre-release builds (tagged `vX.Y.Z-beta.N`)
+instead of only stable releases — this affects `thicket-bin update`, the
+on-launch check above, and `scripts/install.sh` alike. A beta offer is
+labeled "beta update available" in the status line so it's clear you're
+being offered a pre-release. Unset, or set to anything other than `beta`,
+tracks stable only (the default).
+
 ## License
 
 [MIT](LICENSE)
