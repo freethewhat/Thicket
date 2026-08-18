@@ -166,6 +166,19 @@ release. Has no effect on
 .B thicket update
 itself, which always checks.
 .TP
+.B THICKET_CHANNEL
+Set to
+.I beta
+to track pre-release builds (tagged
+.IR vX.Y.Z-beta.N )
+instead of only stable releases. Affects
+.BR "thicket update" ,
+the on-launch check, and
+.IR scripts/install.sh
+alike. Unset, or any value other than
+.IR beta ,
+tracks stable only (the default).
+.TP
 .B PREFIX
 Used only by
 .B thicket update

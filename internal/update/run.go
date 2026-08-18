@@ -21,7 +21,9 @@ import (
 // from this process's Stdin) behave identically to running install.sh
 // directly. PREFIX/VERSION and all other environment variables are
 // inherited unchanged from the current process — install.sh already
-// reads them itself, no special-casing needed here.
+// reads them itself, no special-casing needed here. This includes
+// THICKET_CHANNEL, which install.sh reads to pick between the stable
+// and beta release lists when VERSION isn't explicitly pinned.
 func Run(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, "sh", "-s", "--")
 	cmd.Stdin = bytes.NewReader(scripts.InstallSh)

@@ -29,6 +29,11 @@ type Model struct {
 	// auto-dismiss statusErr does not have.
 	checkVersion string
 	updateNotice string
+	// checkChannel selects which update channel Init's checkUpdateCmd
+	// queries (update.ChannelStable or update.ChannelBeta); empty means
+	// ChannelStable. Set once via WithChannel before the Bubble Tea
+	// program starts, same lifecycle as checkVersion.
+	checkChannel string
 	// searchMode/searchQuery/searchNoMatch/searchPrevCursor: type-ahead
 	// search state (spec docs/superpowers/specs/2026-08-16-thicket-type-ahead-search-design.md).
 	// Zero-valued at construction — no change to New()'s behavior.
@@ -126,11 +131,23 @@ func (m Model) WithUpdateCheck(currentVersion string) Model {
 	return m
 }
 
+// WithChannel returns a copy of m configured to check the given update
+// channel (update.ChannelStable or update.ChannelBeta; empty means
+// ChannelStable) instead of the default stable channel. Has no effect
+// unless WithUpdateCheck was also called with a real version — Init's
+// nil-Cmd short-circuit on an empty/"dev" checkVersion runs regardless of
+// channel. cmd/thicket computes the channel once from THICKET_CHANNEL
+// before calling this method.
+func (m Model) WithChannel(channel string) Model {
+	m.checkChannel = channel
+	return m
+}
+
 func (m Model) Init() tea.Cmd {
 	if m.checkVersion == "" || m.checkVersion == "dev" {
 		return nil
 	}
-	return checkUpdateCmd(m.checkVersion)
+	return checkUpdateCmd(m.checkVersion, m.checkChannel)
 }
 
 // Result reports the outcome after the program quits: ok is true only if

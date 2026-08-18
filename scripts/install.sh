@@ -6,8 +6,11 @@
 #   curl -fsSL .../install.sh | sh -s -- v0.1.0     # pin a version
 #
 # Env overrides:
-#   PREFIX   install root for the binary and man page (default: /usr/local)
-#   VERSION  release tag to install, e.g. v0.1.0 (default: latest)
+#   PREFIX          install root for the binary and man page (default: /usr/local)
+#   VERSION         release tag to install, e.g. v0.1.0 (default: latest on the selected channel)
+#   THICKET_CHANNEL "stable" (default) or "beta" — beta resolves VERSION against
+#                    the full release list (prereleases included, newest first)
+#                    instead of GitHub's "latest" endpoint, which excludes them
 set -eu
 
 # The whole body runs inside main(), called only on the final line. POSIX
@@ -21,6 +24,7 @@ set -eu
 main() {
 	REPO="freethewhat/Thicket"
 	PREFIX="${PREFIX:-/usr/local}"
+	CHANNEL="${THICKET_CHANNEL:-stable}"
 	VERSION="${VERSION:-${1:-}}"
 
 	need curl
@@ -42,7 +46,12 @@ main() {
 	esac
 
 	if [ -z "$VERSION" ]; then
-		VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" |
+		if [ "$CHANNEL" = "beta" ]; then
+			releases_url="https://api.github.com/repos/${REPO}/releases"
+		else
+			releases_url="https://api.github.com/repos/${REPO}/releases/latest"
+		fi
+		VERSION="$(curl -fsSL "$releases_url" |
 			grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
 		[ -n "$VERSION" ] || err "could not determine the latest release; pass a version explicitly"
 	fi
