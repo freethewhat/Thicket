@@ -27,6 +27,13 @@ func TestIsNewer(t *testing.T) {
 		{"malformed current", "not-a-version", "v1.2.3", false},
 		{"dev build never newer", "dev", "v99.0.0", false},
 		{"missing v prefix still parses", "1.2.3", "1.2.4", true},
+		{"beta older than later beta, same core", "v1.0.0-beta.1", "v1.0.0-beta.2", true},
+		{"beta not newer than earlier beta, same core", "v1.0.0-beta.2", "v1.0.0-beta.1", false},
+		{"equal betas", "v1.0.0-beta.1", "v1.0.0-beta.1", false},
+		{"stable promotion from beta of same core is newer", "v1.0.0-beta.1", "v1.0.0", true},
+		{"beta of same core as an already-stable current is not newer", "v1.0.0", "v1.0.0-beta.1", false},
+		{"beta of a newer core beats stable of an older core", "v1.0.0", "v1.1.0-beta.1", true},
+		{"numeric beta ordinal compares numerically, not lexically", "v1.0.0-beta.9", "v1.0.0-beta.10", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -35,6 +42,18 @@ func TestIsNewer(t *testing.T) {
 				t.Errorf("IsNewer(%q, %q) = %v, want %v", tc.current, tc.latest, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestComparePrerelease_NumericFieldsCompareNumerically(t *testing.T) {
+	if got := comparePrerelease("beta.9", "beta.10"); got >= 0 {
+		t.Errorf("comparePrerelease(beta.9, beta.10) = %d, want < 0", got)
+	}
+	if got := comparePrerelease("beta.10", "beta.9"); got <= 0 {
+		t.Errorf("comparePrerelease(beta.10, beta.9) = %d, want > 0", got)
+	}
+	if got := comparePrerelease("beta.1", "beta.1"); got != 0 {
+		t.Errorf("comparePrerelease(beta.1, beta.1) = %d, want 0", got)
 	}
 }
 
