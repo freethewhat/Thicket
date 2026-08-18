@@ -58,7 +58,11 @@ func main() {
 	if os.Getenv("THICKET_NO_UPDATE_CHECK") != "" {
 		checkVersion = ""
 	}
-	m = m.WithUpdateCheck(checkVersion)
+	channel := update.ChannelStable
+	if os.Getenv("THICKET_CHANNEL") == update.ChannelBeta {
+		channel = update.ChannelBeta
+	}
+	m = m.WithUpdateCheck(checkVersion).WithChannel(channel)
 
 	tty, err := os.OpenFile("/dev/tty", os.O_RDWR, 0)
 	if err != nil {
