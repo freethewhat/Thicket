@@ -175,15 +175,23 @@ func (m *Model) handleRight() {
 	}
 	m.cursorMemory[m.activePath] = m.activeCursor
 	remembered, ok := m.cursorMemory[newPath]
+	if !ok {
+		remembered = 0
+	}
 	m.activePath = newPath
 	m.activeEntries = entries
-	if ok {
-		m.activeCursor = remembered
-	} else {
-		m.activeCursor = 0
-	}
-	if len(entries) == 0 {
+	switch {
+	case len(entries) == 0:
 		m.activeCursor = -1
+	case remembered < 0:
+		m.activeCursor = 0
+	case remembered >= len(entries):
+		// Directory shrank since cursorMemory[newPath] was recorded
+		// (e.g. an entry was deleted externally) — land on the last
+		// row rather than resetting to 0 or indexing out of range.
+		m.activeCursor = len(entries) - 1
+	default:
+		m.activeCursor = remembered
 	}
 	m.activeScroll = 0
 	m.clampScroll()
