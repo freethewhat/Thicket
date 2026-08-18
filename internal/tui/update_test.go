@@ -116,6 +116,32 @@ func TestUpdate_LeftReturnsCursorToChildJustLeft(t *testing.T) {
 	}
 }
 
+func TestUpdate_LeftThenRightRestoresPriorCursorPosition(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	sub := filepath.Join(root, "sub")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight}) // root -> sub, cursor 0 (grand)
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown}) // sub cursor 0 -> 1 (leaf.txt)
+	m = updated.(Model)
+	if m.activeEntries[m.activeCursor].Name != "leaf.txt" {
+		t.Fatalf("precondition: cursor not on leaf.txt, entries=%+v cursor=%d", m.activeEntries, m.activeCursor)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft}) // sub -> root
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight}) // root -> sub again
+	m = updated.(Model)
+
+	if m.activePath != sub {
+		t.Fatalf("activePath = %q, want %q", m.activePath, sub)
+	}
+	if m.activeCursor < 0 || m.activeEntries[m.activeCursor].Name != "leaf.txt" {
+		t.Fatalf("cursor not restored to leaf.txt: cursor=%d entries=%+v", m.activeCursor, m.activeEntries)
+	}
+}
+
 func TestUpdate_UpDownClamping(t *testing.T) {
 	root := setupFixture(t)
 	m := newTestModel(t, root)

@@ -11,11 +11,30 @@ import (
 // Model is the Bubble Tea model for the Miller-column browser. Navigation
 // state is derived from activePath plus two integers (activeCursor,
 // activeScroll) rather than a cached tree of panes — see spec §5.
+// cursorMemory is a session-scoped cache of past activeCursor values per
+// directory (spec §5's anticipated follow-up), not additional
+// authoritative state; see its doc comment below.
 type Model struct {
 	activePath    string
 	activeEntries []fsutil.Entry
 	activeCursor  int // -1 when the active directory is empty
 	activeScroll  int
+	// cursorMemory remembers the last activeCursor seen in each directory
+	// (keyed by absolute path), for the current process only — never
+	// persisted to disk. handleRight/handleLeft (internal/tui/update.go)
+	// write to it immediately before they change activePath, so it always
+	// reflects wherever the cursor was left in the directory being
+	// departed. handleRight consults it when re-entering a directory, to
+	// restore that position instead of resetting to row 0; handleLeft
+	// only writes — its own cursor placement is fully determined by
+	// child-name lookup and does not need to read this map. This is the
+	// "contained, addressable follow-up" spec
+	// docs/superpowers/specs/2026-08-15-thicket-tui-file-browser-design.md
+	// §5 anticipated: cursorMemory is itself derived (a cache of past
+	// activeCursor values), not authoritative state a transition depends
+	// on to be correct, so it does not change the "derived from
+	// activePath plus two integers" model below.
+	cursorMemory map[string]int
 	showHidden    bool
 	statusErr     string
 	// checkVersion/updateNotice: on-launch update-check state (spec
@@ -96,7 +115,7 @@ func New(startPath, marksPath string) (Model, error) {
 	if err != nil {
 		return Model{}, err
 	}
-	m := Model{activePath: abs}
+	m := Model{activePath: abs, cursorMemory: make(map[string]int)}
 	entries, err := fsutil.ListDir(m.activePath, m.showHidden)
 	if err != nil {
 		return Model{}, err
