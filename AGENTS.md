@@ -48,9 +48,12 @@ Three-layer module; `cmd/thicket` depends on `internal/tui` and directly on
    design; `DefaultPath()` resolves `$XDG_STATE_HOME/thicket/marks`
    (falling back to `$HOME/.local/state/thicket/marks`).
 3. **`internal/tui`** — Bubble Tea MVU (Model-Update-View / Elm-architecture).
-   `Model` (`internal/tui/model.go`) holds *only* `activePath` plus two
-   integers (`activeCursor`, `activeScroll`) — ancestor columns and the
-   preview pane are **derived** on every render by walking
+   `Model` (`internal/tui/model.go`) holds `activePath` plus two integers
+   (`activeCursor`, `activeScroll`) and a session-scoped `cursorMemory
+   map[string]int` cache of past per-directory cursor positions (populated
+   by `handleRight`/`handleLeft`, consulted by `handleRight` — spec §5's
+   anticipated follow-up, not additional authoritative state) — ancestor
+   columns and the preview pane are **derived** on every render by walking
    `filepath.Dir(activePath)` and calling `fsutil.ListDir`/`ReadFilePreview`
    fresh, not cached. `Update()` (`internal/tui/update.go`) handles
    `tea.KeyMsg`/`tea.WindowSizeMsg`, mutating cursor/scroll/path/`showHidden`;
@@ -152,11 +155,14 @@ Manual run without installing: `go run ./cmd/thicket [path]`.
   `"thicket: %v\n"` and mapped to exit codes 1 (quit without selecting) or
   2 (error).
 - **State management**: single source of truth per `Model` —
-  `activePath` + `activeCursor`/`activeScroll` integers. Everything else
-  (ancestor columns, preview pane contents) is *recomputed from disk on
-  every `View()` call* rather than cached — see `Model` doc comment in
-  `internal/tui/model.go`. Do not introduce a pane cache without updating
-  that documented invariant.
+  `activePath` + `activeCursor`/`activeScroll` integers, plus the
+  `cursorMemory` cache (a `map[string]int` of past `activeCursor` values
+  per directory, written by `handleRight`/`handleLeft`, read only by
+  `handleRight`) described in the `Model` doc comment in
+  `internal/tui/model.go`. Everything else (ancestor columns, preview pane
+  contents) is *recomputed from disk on every `View()` call* rather than
+  cached. Do not introduce a pane cache without updating that documented
+  invariant.
 - **Concurrency**: narrowly scoped. All navigation/search/find/marks
   handling is synchronous, same as before. The one exception is the
   on-launch update check (`internal/tui/update_check.go`): `Model.Init`

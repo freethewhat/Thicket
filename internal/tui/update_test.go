@@ -116,6 +116,76 @@ func TestUpdate_LeftReturnsCursorToChildJustLeft(t *testing.T) {
 	}
 }
 
+func TestUpdate_LeftThenRightRestoresPriorCursorPosition(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	sub := filepath.Join(root, "sub")
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight}) // root -> sub, cursor 0 (grand)
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown}) // sub cursor 0 -> 1 (leaf.txt)
+	m = updated.(Model)
+	if m.activeEntries[m.activeCursor].Name != "leaf.txt" {
+		t.Fatalf("precondition: cursor not on leaf.txt, entries=%+v cursor=%d", m.activeEntries, m.activeCursor)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft}) // sub -> root
+	m = updated.(Model)
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight}) // root -> sub again
+	m = updated.(Model)
+
+	if m.activePath != sub {
+		t.Fatalf("activePath = %q, want %q", m.activePath, sub)
+	}
+	if m.activeCursor < 0 || m.activeEntries[m.activeCursor].Name != "leaf.txt" {
+		t.Fatalf("cursor not restored to leaf.txt: cursor=%d entries=%+v", m.activeCursor, m.activeEntries)
+	}
+}
+
+func TestUpdate_CursorMemoryClampsWhenEntryCountShrinks(t *testing.T) {
+	root := t.TempDir()
+	multi := filepath.Join(root, "multi")
+	mustMkdir(t, multi)
+	mustWriteFile(t, filepath.Join(multi, "a.txt"), "a")
+	mustWriteFile(t, filepath.Join(multi, "b.txt"), "b")
+	mustWriteFile(t, filepath.Join(multi, "c.txt"), "c")
+	mustWriteFile(t, filepath.Join(multi, "d.txt"), "d")
+	m := newTestModel(t, root)
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRight}) // root -> multi, cursor 0 (a.txt)
+	m = updated.(Model)
+	for range 3 {
+		updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown}) // -> d.txt (index 3)
+		m = updated.(Model)
+	}
+	if m.activeEntries[m.activeCursor].Name != "d.txt" {
+		t.Fatalf("precondition: cursor not on d.txt, entries=%+v cursor=%d", m.activeEntries, m.activeCursor)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft}) // multi -> root; remembers cursor 3 for multi
+	m = updated.(Model)
+
+	if err := os.Remove(filepath.Join(multi, "d.txt")); err != nil {
+		t.Fatalf("remove d.txt: %v", err)
+	}
+
+	updated, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight}) // root -> multi again; multi now has 3 entries
+	m = updated.(Model)
+
+	if m.activePath != multi {
+		t.Fatalf("activePath = %q, want %q", m.activePath, multi)
+	}
+	if len(m.activeEntries) != 3 {
+		t.Fatalf("activeEntries len = %d, want 3", len(m.activeEntries))
+	}
+	if m.activeCursor != 2 {
+		t.Fatalf("activeCursor = %d, want 2 (clamped to last row)", m.activeCursor)
+	}
+	if m.activeEntries[m.activeCursor].Name != "c.txt" {
+		t.Fatalf("cursor not on last row c.txt: entries=%+v cursor=%d", m.activeEntries, m.activeCursor)
+	}
+}
+
 func TestUpdate_UpDownClamping(t *testing.T) {
 	root := setupFixture(t)
 	m := newTestModel(t, root)

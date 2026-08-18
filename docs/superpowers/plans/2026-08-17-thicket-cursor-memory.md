@@ -349,7 +349,11 @@ Expected: FAIL — with Task 1's naive restore, `remembered` is `3` but `len(ent
 
 - [ ] **Step 3: Implement the clamp**
 
-In `internal/tui/update.go`, `handleRight` currently has (added by Task 1):
+In `internal/tui/update.go`, `handleRight` currently has (added by Task 1,
+including a fix-round addition — Task 1's task review caught that restoring
+a remembered cursor without re-clamping the scroll window left it rendered
+off-screen, so `m.clampScroll()` now follows `m.activeScroll = 0` here, the
+same pattern `handleLeft`/`reload`/`moveCursor` already use):
 
 ```go
 	m.cursorMemory[m.activePath] = m.activeCursor
@@ -365,6 +369,7 @@ In `internal/tui/update.go`, `handleRight` currently has (added by Task 1):
 		m.activeCursor = -1
 	}
 	m.activeScroll = 0
+	m.clampScroll()
 	m.statusErr = ""
 ```
 
@@ -392,6 +397,7 @@ Replace the restore block (everything from `remembered, ok :=` through the `if l
 		m.activeCursor = remembered
 	}
 	m.activeScroll = 0
+	m.clampScroll()
 	m.statusErr = ""
 ```
 
@@ -433,6 +439,7 @@ func (m *Model) handleRight() {
 		m.activeCursor = remembered
 	}
 	m.activeScroll = 0
+	m.clampScroll()
 	m.statusErr = ""
 }
 ```
