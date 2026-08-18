@@ -100,11 +100,19 @@ type Model struct {
 	markJumpPending bool
 	marksListMode   bool
 	marksCursor     int // -1 when markTable is empty
-	width           int
-	height          int
-	quitting        bool
-	selected        bool
-	chosenPath      string
+	// yankNotice: transient status-line confirmation shown after a
+	// successful y/Y (spec docs/superpowers/specs/2026-08-18-thicket-clipboard-yank-design.md).
+	// Self-clears via a tea.Tick-scheduled clearYankNoticeMsg, mirroring
+	// updateNotice's shape. Unlike searchMode/helpMode/findMode/
+	// markSetPending/markJumpPending/marksListMode, this is not a modal
+	// state — y/Y are direct-action keys with no follow-up keystroke to
+	// capture, so no *Pending/*Mode field is needed alongside it.
+	yankNotice string
+	width      int
+	height     int
+	quitting   bool
+	selected   bool
+	chosenPath string
 }
 
 // New builds a Model rooted at startPath. startPath must be readable;

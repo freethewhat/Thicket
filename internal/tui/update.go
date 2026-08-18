@@ -91,12 +91,18 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.markJumpPending = true
 		case "'":
 			m.enterMarksListMode()
+		case "y":
+			return m, m.yankEntry()
+		case "Y":
+			return m, m.yankDir()
 		}
 	case updateAvailableMsg:
 		m.updateNotice = updateNoticeText(msg.tag)
 		return m, dismissNoticeCmd(updateNoticeDuration)
 	case clearUpdateNoticeMsg:
 		m.updateNotice = ""
+	case clearYankNoticeMsg:
+		m.yankNotice = ""
 	}
 	return m, nil
 }

@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"thicket/internal/fsutil"
@@ -2033,5 +2034,158 @@ func TestUpdate_FindEnterOnUnreadableRelocationTargetSetsStatusErrAndExits(t *te
 	}
 	if m.activeCursor != prevCursor || len(m.activeEntries) != len(prevEntries) {
 		t.Fatalf("expected activeEntries/activeCursor untouched on relocation failure: cursor=%d entries=%+v", m.activeCursor, m.activeEntries)
+	}
+}
+
+// withStubClipboardCopy replaces clipboardCopyFunc for the duration of
+// the test and restores it afterward, avoiding a real subprocess call.
+func withStubClipboardCopy(t *testing.T, fn func(string) error) {
+	t.Helper()
+	orig := clipboardCopyFunc
+	clipboardCopyFunc = fn
+	t.Cleanup(func() { clipboardCopyFunc = orig })
+}
+
+func TestUpdate_YCopiesHighlightedEntryPath(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	var got string
+	withStubClipboardCopy(t, func(text string) error {
+		got = text
+		return nil
+	})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = updated.(Model)
+
+	want := filepath.Join(root, "sub")
+	if got != want {
+		t.Fatalf("clipboardCopyFunc got %q, want %q", got, want)
+	}
+	if m.yankNotice == "" {
+		t.Fatal("yankNotice: want non-empty after successful yank")
+	}
+}
+
+func TestUpdate_YCopiesFileEntryPath(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.activeCursor = fsutil.IndexOfName(m.activeEntries, "file.txt")
+	var got string
+	withStubClipboardCopy(t, func(text string) error {
+		got = text
+		return nil
+	})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = updated.(Model)
+
+	want := filepath.Join(root, "file.txt")
+	if got != want {
+		t.Fatalf("clipboardCopyFunc got %q, want %q (must yank the file itself, unlike selectedDirPath)", got, want)
+	}
+}
+
+func TestUpdate_YOnEmptyDirectoryCopiesActivePath(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	grand := filepath.Join(root, "sub", "grand")
+	m.activePath = grand
+	m.activeEntries = nil
+	m.activeCursor = -1
+	var got string
+	withStubClipboardCopy(t, func(text string) error {
+		got = text
+		return nil
+	})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = updated.(Model)
+
+	if got != grand {
+		t.Fatalf("clipboardCopyFunc got %q, want %q (activePath fallback on empty dir)", got, grand)
+	}
+}
+
+func TestUpdate_CapitalYAlwaysCopiesActivePathRegardlessOfCursor(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root) // default cursor is on "sub", a directory
+	var got string
+	withStubClipboardCopy(t, func(text string) error {
+		got = text
+		return nil
+	})
+
+	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("Y")})
+	m = updated.(Model)
+
+	if got != root {
+		t.Fatalf("clipboardCopyFunc got %q, want %q (Y always yanks activePath)", got, root)
+	}
+}
+
+func TestUpdate_YSetsYankNoticeAndClearsStatusErr(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.statusErr = "stale error"
+	withStubClipboardCopy(t, func(string) error { return nil })
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = updated.(Model)
+
+	if m.statusErr != "" {
+		t.Fatalf("statusErr = %q, want empty after successful yank", m.statusErr)
+	}
+	if m.yankNotice == "" {
+		t.Fatal("yankNotice: want non-empty after successful yank")
+	}
+	if cmd == nil {
+		t.Fatal("Update(y): want non-nil tea.Cmd (the dismiss tea.Tick)")
+	}
+}
+
+func TestUpdate_YFailureSetsStatusErrAndClearsYankNotice(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.yankNotice = "old notice"
+	withStubClipboardCopy(t, func(string) error { return errFakeNetwork })
+
+	updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = updated.(Model)
+
+	if m.yankNotice != "" {
+		t.Fatalf("yankNotice = %q, want empty after failed yank", m.yankNotice)
+	}
+	if !strings.Contains(m.statusErr, "yank:") || !strings.Contains(m.statusErr, errFakeNetwork.Error()) {
+		t.Fatalf("statusErr = %q, want it to contain %q and %q", m.statusErr, "yank:", errFakeNetwork.Error())
+	}
+	if cmd != nil {
+		t.Fatal("Update(y) on failure: want nil tea.Cmd")
+	}
+}
+
+func TestUpdate_ClearYankNoticeMsgClearsYankNotice(t *testing.T) {
+	root := setupFixture(t)
+	m := newTestModel(t, root)
+	m.yankNotice = "yanked: /some/path"
+
+	updated, _ := m.Update(clearYankNoticeMsg{})
+	m = updated.(Model)
+
+	if m.yankNotice != "" {
+		t.Errorf("yankNotice = %q, want empty after clearYankNoticeMsg", m.yankNotice)
+	}
+}
+
+func TestYankNoticeDuration_IsThreeSeconds(t *testing.T) {
+	if yankNoticeDuration != 3*time.Second {
+		t.Errorf("yankNoticeDuration = %s, want 3s", yankNoticeDuration)
+	}
+}
+
+func TestDismissYankNoticeCmd_ProducesClearYankNoticeMsgAfterDuration(t *testing.T) {
+	msg := dismissYankNoticeCmd(time.Millisecond)()
+	if _, ok := msg.(clearYankNoticeMsg); !ok {
+		t.Fatalf("dismissYankNoticeCmd(...)() = %#v, want clearYankNoticeMsg", msg)
 	}
 }
