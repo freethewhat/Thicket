@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"thicket/internal/update"
 )
 
 // withStubLatestTag replaces latestTagFunc for the duration of the test
@@ -62,20 +64,29 @@ func TestCheckUpdateCmd_PassesChannelToLatestTagFunc(t *testing.T) {
 	}
 }
 
-func TestUpdateNoticeText_StableTagHasNoLabel(t *testing.T) {
-	got := updateNoticeText("v1.2.3")
+func TestUpdateNoticeText_StableChannelHasNoLabel(t *testing.T) {
+	got := updateNoticeText("v1.2.3", update.ChannelStable)
 	if strings.Contains(got, "beta") {
-		t.Errorf("updateNoticeText(%q) = %q, want no beta label", "v1.2.3", got)
+		t.Errorf("updateNoticeText(%q, stable) = %q, want no beta label", "v1.2.3", got)
 	}
 	if !strings.Contains(got, "update available: v1.2.3") {
-		t.Errorf("updateNoticeText(%q) = %q, missing tag", "v1.2.3", got)
+		t.Errorf("updateNoticeText(%q, stable) = %q, missing tag", "v1.2.3", got)
 	}
 }
 
-func TestUpdateNoticeText_PrereleaseTagLabelsBeta(t *testing.T) {
-	got := updateNoticeText("v1.3.0-beta.1")
+func TestUpdateNoticeText_BetaChannelLabelsBeta(t *testing.T) {
+	got := updateNoticeText("v1.3.0-beta.1", update.ChannelBeta)
 	if !strings.Contains(got, "beta update available: v1.3.0-beta.1") {
-		t.Errorf("updateNoticeText(%q) = %q, want a beta-labeled notice", "v1.3.0-beta.1", got)
+		t.Errorf("updateNoticeText(%q, beta) = %q, want a beta-labeled notice", "v1.3.0-beta.1", got)
+	}
+}
+
+func TestUpdateNoticeText_NonBetaPrereleaseTagOnStableChannelHasNoLabel(t *testing.T) {
+	// A future "-rc.N"/"-alpha.N" tag reached on the stable channel must
+	// not be mislabeled "beta" by a bare hyphen check (issue #33 item 1).
+	got := updateNoticeText("v2.0.0-rc.1", update.ChannelStable)
+	if strings.Contains(got, "beta") {
+		t.Errorf("updateNoticeText(%q, stable) = %q, want no beta label", "v2.0.0-rc.1", got)
 	}
 }
 
