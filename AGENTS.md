@@ -29,7 +29,7 @@ Every other v1 non-goal in §3 still holds.
 Three-layer module; `cmd/thicket` depends on `internal/tui` and directly on
 `internal/marks` (for `marks.DefaultPath()`) and `internal/update` (for the
 `update` subcommand), while `internal/tui` depends on
-`internal/{fsutil,marks,update}`:
+`internal/{fsutil,marks,update,clipboard}`:
 
 1. **`internal/fsutil`** — pure filesystem I/O. `ListDir(dir, showHidden) ([]Entry, error)`
    reads a directory, classifies each entry (symlink resolution via
@@ -52,7 +52,16 @@ Three-layer module; `cmd/thicket` depends on `internal/tui` and directly on
    tolerance (a malformed line is skipped, not fatal) and no-caching
    design; `DefaultPath()` resolves `$XDG_STATE_HOME/thicket/marks`
    (falling back to `$HOME/.local/state/thicket/marks`).
-3. **`internal/tui`** — Bubble Tea MVU (Model-Update-View / Elm-architecture).
+3. **`internal/clipboard`** — subprocess-based system clipboard writes.
+   `Copy(text string) error` tries every clipboard mechanism found on
+   `$PATH` in preference order (`wl-copy`, `xclip`, `xsel` — order chosen
+   by whether `$WAYLAND_DISPLAY` is set), bounded per-attempt by a 1s
+   timeout via `exec.CommandContext`, falling back to the next mechanism
+   on failure rather than masking a working one behind a non-functional
+   preferred pick. Returns `ErrNoMechanism` if none of the three binaries
+   is on `$PATH`. No state, no caching — same design principle as
+   `fsutil`/`marks`.
+4. **`internal/tui`** — Bubble Tea MVU (Model-Update-View / Elm-architecture).
    `Model` (`internal/tui/model.go`) holds `activePath` plus two integers
    (`activeCursor`, `activeScroll`) and a session-scoped `cursorMemory
    map[string]int` cache of past per-directory cursor positions (populated
@@ -73,7 +82,7 @@ Three-layer module; `cmd/thicket` depends on `internal/tui` and directly on
    one narrow exception: the on-launch update check uses a `tea.Cmd`/`tea.Tick`
    pair (see **Concurrency** bullet below) — **no goroutines or channels are
    used anywhere**.
-4. **`cmd/thicket`** — process entry point and terminal wiring
+5. **`cmd/thicket`** — process entry point and terminal wiring
    (`cmd/thicket/main.go`). Opens `/dev/tty` directly (`os.OpenFile("/dev/tty", ...)`)
    for TUI input/output so the program still gets a real terminal even
    when its stdout is captured by shell command substitution; rebinds
@@ -82,7 +91,7 @@ Three-layer module; `cmd/thicket` depends on `internal/tui` and directly on
    real display rather than the piped stdout. On quit, writes the chosen
    path to stdout (`writeSelection`) and exits 0; exits 1 on
    quit-without-selecting; exits 2 on any setup/runtime error.
-5. **Shell wrappers** (`shell/thicket.bash`, `shell/thicket.zsh`) define a
+6. **Shell wrappers** (`shell/thicket.bash`, `shell/thicket.zsh`) define a
    `th()` function: `dir=$(command thicket "$@") && [ -n "$dir" ] && cd -- "$dir"`.
    The binary itself never touches the calling shell's directory — the
    wrapper is the only thing that does.
@@ -97,11 +106,11 @@ th (shell function) → thicket binary (/dev/tty for UI) → stdout: chosen path
                                 │
                          internal/tui
                    (Model/Update/View, Bubble Tea)
-                │                │                │
-                ▼                ▼                ▼
-       internal/fsutil    internal/update    internal/marks
-       (ListDir,           (LatestTag,        (Load, Save,
-        ReadFilePreview,    IsNewer, Run)      DefaultPath)
+                │            │            │            │
+                ▾            ▾            ▾            ▾
+       internal/fsutil internal/update internal/marks internal/clipboard
+       (ListDir,        (LatestTag,     (Load, Save,    (Copy)
+        ReadFilePreview, IsNewer, Run)   DefaultPath)
         WalkSubtree)
 ```
 
@@ -112,6 +121,7 @@ th (shell function) → thicket binary (/dev/tty for UI) → stdout: chosen path
 | `cmd/thicket/` | CLI entry point (`main.go`); process/tty wiring, exit codes |
 | `internal/tui/` | Bubble Tea `Model`/`Update`/`View` — navigation state machine and rendering |
 | `internal/marks/` | Pure directory-marks (bookmark) persistence — letter→path table, load/save, no TUI concerns |
+| `internal/clipboard/` | Subprocess-based system clipboard writes — `Copy`, trying wl-copy/xclip/xsel in preference order |
 | `internal/fsutil/` | Pure filesystem helpers — directory listing, entry classification, file preview |
 | `internal/update/` | Release check + install — `LatestTag`/`IsNewer`/`Run` |
 | `shell/` | `thicket` shell-function wrappers for bash and zsh (source into rc files) |
