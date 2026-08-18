@@ -2213,7 +2213,7 @@ func TestUpdate_StaleClearYankNoticeMsgDoesNotClearNewerNotice(t *testing.T) {
 		t.Fatal("second y: want non-empty yankNotice")
 	}
 
-	staleMsg := firstCmd()
+	staleMsg := clearYankNoticeMsg{gen: 1}
 	updated, _ = m.Update(staleMsg)
 	m = updated.(Model)
 
