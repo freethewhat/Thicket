@@ -101,6 +101,7 @@ func TestCopy_AllMechanismsFailReturnsJoinedError(t *testing.T) {
 	binDir := t.TempDir()
 	writeStub(t, binDir, "wl-copy", "exit 1\n")
 	writeStub(t, binDir, "xclip", "exit 1\n")
+	writeStub(t, binDir, "xsel", "exit 1\n")
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("WAYLAND_DISPLAY", "wayland-0")
 
