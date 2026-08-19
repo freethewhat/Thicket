@@ -146,6 +146,20 @@ jumps to the highlighted mark,
 deletes it,
 .BR q / Esc
 closes the list.
+.TP
+.B y
+Copy the highlighted entry's absolute path to the system clipboard
+(shells out to
+.BR wl-copy ,
+.BR xclip ,
+or
+.BR xsel ,
+whichever is found first); if the active directory is empty, copies its
+own path instead.
+.TP
+.B Y
+Copy the active directory's own absolute path to the system clipboard,
+regardless of what is highlighted.
 .SH FILES
 .TP
 .I $XDG_STATE_HOME/thicket/marks

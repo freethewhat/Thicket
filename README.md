@@ -65,6 +65,8 @@ the full manual). Keys:
 | `` ` `` | Jump to a bookmarked directory by letter |
 | `'` | Open the marks list |
 | `d` (in marks list) | Delete the highlighted mark |
+| `y` | Copy the highlighted entry's path to the clipboard |
+| `Y` | Copy the active directory's own path to the clipboard |
 
 Navigation only in v1 — no file create/rename/delete/copy/move, no config
 file.

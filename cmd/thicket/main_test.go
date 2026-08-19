@@ -22,7 +22,7 @@ func TestWriteSelectionReturnsErrorWhenOutputWriteFails(t *testing.T) {
 
 func TestHelpTextContainsUsageAndKeybindings(t *testing.T) {
 	out := helpText()
-	for _, want := range []string{"Usage:", "thicket [path]", "-h | --help", "Move selection up", "Toggle this help screen"} {
+	for _, want := range []string{"Usage:", "thicket [path]", "-h | --help", "Move selection up", "Toggle this help screen", "Copy the highlighted entry's path to the clipboard"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("helpText() missing %q:\n%s", want, out)
 		}
