@@ -24,12 +24,17 @@ set -eu
 main() {
 	REPO="freethewhat/Thicket"
 	PREFIX="${PREFIX:-/usr/local}"
-	CHANNEL="${THICKET_CHANNEL:-stable}"
+	channel="${THICKET_CHANNEL:-stable}"
 	VERSION="${VERSION:-${1:-}}"
+
+	bin_dir="${PREFIX}/bin"
+	man_dir="${PREFIX}/share/man/man1"
+	shell_dir="${PREFIX}/share/thicket/shell"
 
 	need curl
 	need tar
 	need install
+	need awk
 
 	os="$(uname -s)"
 	case "$os" in
@@ -46,7 +51,7 @@ main() {
 	esac
 
 	if [ -z "$VERSION" ]; then
-		if [ "$CHANNEL" = "beta" ]; then
+		if [ "$channel" = "beta" ]; then
 			releases_url="https://api.github.com/repos/${REPO}/releases"
 		else
 			releases_url="https://api.github.com/repos/${REPO}/releases/latest"
@@ -54,6 +59,22 @@ main() {
 		VERSION="$(curl -fsSL "$releases_url" |
 			grep -m1 '"tag_name"' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
 		[ -n "$VERSION" ] || err "could not determine the latest release; pass a version explicitly"
+
+		# GitHub's /releases list (the beta channel's source) is ordered by
+		# creation date, not semver precedence — a stable hotfix tagged after
+		# an outstanding beta would otherwise silently move a beta-channel
+		# user backward. Guard only applies to an auto-resolved VERSION (an
+		# explicit VERSION/positional-arg pin always wins) and only when a
+		# prior thicket-bin is actually present to compare against; a "dev"
+		# local build is never treated as a real prior release worth
+		# protecting.
+		if [ -x "${bin_dir}/thicket-bin" ]; then
+			current="$("${bin_dir}/thicket-bin" -v 2>/dev/null | awk '{print $2}')"
+			if [ -n "$current" ] && [ "$current" != "dev" ] && [ "$(is_newer "$current" "$VERSION")" != "yes" ]; then
+				echo "install.sh: installed thicket-bin ${current} is already up to date with the latest ${channel} release (${VERSION}); nothing to do" >&2
+				exit 0
+			fi
+		fi
 	fi
 
 	version_num="${VERSION#v}"
@@ -67,10 +88,6 @@ main() {
 	curl -fsSL "$url" -o "${workdir}/${archive}" || err "download failed: ${url}"
 
 	tar -xzf "${workdir}/${archive}" -C "$workdir"
-
-	bin_dir="${PREFIX}/bin"
-	man_dir="${PREFIX}/share/man/man1"
-	shell_dir="${PREFIX}/share/thicket/shell"
 
 	writable_prefix_dir="$PREFIX"
 	while [ ! -e "$writable_prefix_dir" ]; do
@@ -102,6 +119,66 @@ err() {
 
 need() {
 	command -v "$1" >/dev/null 2>&1 || err "'$1' is required but not found in PATH"
+}
+
+# is_newer prints "yes" if $2 has higher semver precedence than $1, else
+# "no". Ported 1:1 from internal/update.IsNewer/isNewerSemver/
+# comparePrerelease (see internal/update/check.go) so install.sh's
+# downgrade guard agrees with the Go client's own update-availability
+# logic. Both arguments accept an optional leading "v"; "$1" == "dev" or
+# either argument failing to parse as X.Y.Z[-pre] both yield "no".
+is_newer() {
+	awk -v cur="$1" -v lat="$2" '
+	function parse(v, out,    core, i, parts, n) {
+		sub(/^v/, "", v)
+		out["ok"] = 0
+		i = index(v, "-")
+		if (i > 0) {
+			core = substr(v, 1, i-1)
+			out["pre"] = substr(v, i+1)
+		} else {
+			core = v
+			out["pre"] = ""
+		}
+		n = split(core, parts, ".")
+		if (n != 3) return
+		for (i = 1; i <= 3; i++) {
+			if (parts[i] !~ /^[0-9]+$/) return
+		}
+		out["major"] = parts[1] + 0
+		out["minor"] = parts[2] + 0
+		out["patch"] = parts[3] + 0
+		out["ok"] = 1
+	}
+	function cmp_pre(a, b,    as, bs, na, nb, i, an, bn) {
+		na = split(a, as, ".")
+		nb = split(b, bs, ".")
+		for (i = 1; i <= na && i <= nb; i++) {
+			if (as[i] == bs[i]) continue
+			if (as[i] ~ /^[0-9]+$/ && bs[i] ~ /^[0-9]+$/) {
+				an = as[i] + 0; bn = bs[i] + 0
+				return (an < bn) ? -1 : 1
+			}
+			return (as[i] < bs[i]) ? -1 : 1
+		}
+		if (na < nb) return -1
+		if (na > nb) return 1
+		return 0
+	}
+	BEGIN {
+		if (cur == "dev") { print "no"; exit }
+		parse(cur, c)
+		parse(lat, l)
+		if (!c["ok"] || !l["ok"]) { print "no"; exit }
+		if (c["major"] != l["major"]) { print (l["major"] > c["major"]) ? "yes" : "no"; exit }
+		if (c["minor"] != l["minor"]) { print (l["minor"] > c["minor"]) ? "yes" : "no"; exit }
+		if (c["patch"] != l["patch"]) { print (l["patch"] > c["patch"]) ? "yes" : "no"; exit }
+		if (c["pre"] == l["pre"]) { print "no"; exit }
+		if (c["pre"] == "") { print "no"; exit }
+		if (l["pre"] == "") { print "yes"; exit }
+		print (cmp_pre(c["pre"], l["pre"]) < 0) ? "yes" : "no"
+	}
+	'
 }
 
 main "$@"

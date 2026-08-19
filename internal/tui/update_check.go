@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -59,14 +58,14 @@ func dismissNoticeCmd(d time.Duration) tea.Cmd {
 }
 
 // updateNoticeText formats the toast shown in the status line's right
-// slot when updateAvailableMsg arrives. A tag containing "-" is a
-// prerelease — the project's tagging convention never puts a hyphen in a
-// stable "vX.Y.Z" tag, so this is a safe, sufficient signal — and is
-// labeled as a beta offer to avoid confusing a beta-channel user about
-// why they're seeing a pre-release version string.
-func updateNoticeText(tag string) string {
+// slot when updateAvailableMsg arrives. The label is derived from the
+// channel the check ran on (Model.checkChannel, threaded through from
+// Update's updateAvailableMsg handler) rather than from the tag's shape:
+// a future "-rc.N" or "-alpha.N" prerelease convention would otherwise
+// be mislabeled "beta" by a bare hyphen check.
+func updateNoticeText(tag, channel string) string {
 	label := "update available"
-	if strings.Contains(tag, "-") {
+	if channel == update.ChannelBeta {
 		label = "beta update available"
 	}
 	return fmt.Sprintf("%s: %s — run 'thicket-bin update'", label, tag)

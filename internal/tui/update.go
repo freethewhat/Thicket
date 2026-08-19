@@ -93,7 +93,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.enterMarksListMode()
 		}
 	case updateAvailableMsg:
-		m.updateNotice = updateNoticeText(msg.tag)
+		m.updateNotice = updateNoticeText(msg.tag, m.checkChannel)
 		return m, dismissNoticeCmd(updateNoticeDuration)
 	case clearUpdateNoticeMsg:
 		m.updateNotice = ""
